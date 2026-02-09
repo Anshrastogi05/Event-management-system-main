@@ -179,3 +179,5 @@ Run backend using PM2 or Docker
 Enable CORS for frontend origin
 
 Ensure Socket.IO support in production
+
+LICENSE MIT
