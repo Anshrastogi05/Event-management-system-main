@@ -8,9 +8,15 @@ const userSchema = new mongoose.Schema(
     password: { type: String, required: true, minlength: 6, select: false },
     role: { type: String, enum: ['customer', 'organizer', 'admin'], default: 'customer' },
     isBlocked: { type: Boolean, default: false },
+    isEmailVerified: { type: Boolean, default: false },
     points: { type: Number, default: 0 },
     interests: [{ type: String }],
     avatarUrl: { type: String },
+    authOtpCodeHash: { type: String, select: false },
+    authOtpExpiresAt: { type: Date, select: false },
+    authOtpPurpose: { type: String, enum: ['signup', 'login'], select: false },
+    passwordResetToken: { type: String, select: false },
+    passwordResetExpiresAt: { type: Date, select: false },
   },
   { timestamps: true }
 );
@@ -28,5 +34,3 @@ userSchema.methods.comparePassword = function (candidate) {
 
 export const User = mongoose.model('User', userSchema);
 export default User;
-
-

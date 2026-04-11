@@ -1,31 +1,482 @@
+import { createHash, randomBytes } from 'crypto';
+import { env } from '../config/env.js';
 import User from '../models/User.js';
-import { generateJwtToken } from '../utils/generateToken.js';
+import { sendEmail } from '../utils/email.js';
+import { generateJwtToken, verifyJwtToken } from '../utils/generateToken.js';
+
+const passwordResetWindowMs = env.passwordResetTokenTtlMinutes * 60 * 1000;
+const authOtpWindowMs = env.authOtpExpiresInMinutes * 60 * 1000;
+
+function buildClientUrl(path) {
+  return `${env.clientUrl.replace(/\/$/, '')}${path}`;
+}
+
+function hashValue(value) {
+  return createHash('sha256').update(value).digest('hex');
+}
+
+function hashResetToken(token) {
+  return hashValue(token);
+}
+
+function createPasswordResetToken() {
+  const token = randomBytes(32).toString('hex');
+
+  return {
+    rawToken: token,
+    hashedToken: hashResetToken(token),
+    expiresAt: new Date(Date.now() + passwordResetWindowMs),
+  };
+}
+
+function createOtpCode() {
+  const code = `${Math.floor(100000 + Math.random() * 900000)}`;
+
+  return {
+    rawCode: code,
+    hashedCode: hashValue(code),
+    expiresAt: new Date(Date.now() + authOtpWindowMs),
+  };
+}
+
+function buildAuthPayload(user) {
+  return {
+    id: user._id,
+    name: user.name,
+    email: user.email,
+    role: user.role,
+    isEmailVerified: user.isEmailVerified,
+  };
+}
+
+function buildPendingOtpSession(user, purpose) {
+  return generateJwtToken(
+    {
+      id: user._id,
+      purpose,
+      authStage: 'otp',
+    },
+    { expiresIn: env.authOtpSessionExpiresIn }
+  );
+}
+
+function clearAuthOtp(user) {
+  user.authOtpCodeHash = undefined;
+  user.authOtpExpiresAt = undefined;
+  user.authOtpPurpose = undefined;
+}
+
+function buildWelcomeEmail(user) {
+  const dashboardUrl = buildClientUrl('/dashboard');
+  const displayName = user.name || 'there';
+
+  return {
+    subject: 'Welcome to EventManager',
+    text: [
+      `Hi ${displayName},`,
+      '',
+      'Welcome to EventManager. Your account has been created successfully.',
+      `Role: ${user.role}`,
+      `Email: ${user.email}`,
+      `Open your dashboard: ${dashboardUrl}`,
+      '',
+      'Thanks for joining us.',
+      '',
+      'EventManager Team',
+    ].join('\n'),
+    html: `
+      <div style="font-family: Arial, sans-serif; background: #f8fafc; padding: 24px; color: #0f172a;">
+        <div style="max-width: 640px; margin: 0 auto; background: #ffffff; border-radius: 18px; padding: 32px; border: 1px solid #e2e8f0;">
+          <div style="font-size: 12px; letter-spacing: 0.2em; text-transform: uppercase; color: #64748b; margin-bottom: 12px;">Welcome</div>
+          <h1 style="margin: 0 0 12px; font-size: 28px; line-height: 1.2;">Thanks for signing up, ${displayName}</h1>
+          <p style="margin: 0 0 20px; font-size: 16px; line-height: 1.6;">Your EventManager account is ready. You can now explore events, manage bookings, and track your activity from one place.</p>
+
+          <div style="border-radius: 16px; background: #ecfeff; padding: 20px; margin-bottom: 20px;">
+            <div style="margin-bottom: 8px;"><strong>Name:</strong> ${displayName}</div>
+            <div style="margin-bottom: 8px;"><strong>Email:</strong> ${user.email}</div>
+            <div><strong>Role:</strong> ${user.role}</div>
+          </div>
+
+          <a href="${dashboardUrl}" style="display: inline-block; background: #0f172a; color: #ffffff; text-decoration: none; padding: 12px 20px; border-radius: 999px; font-weight: 600;">
+            Open Dashboard
+          </a>
+
+          <p style="margin: 24px 0 0; font-size: 14px; color: #475569;">See you soon,<br />EventManager Team</p>
+        </div>
+      </div>
+    `,
+  };
+}
+
+function buildPasswordResetEmail(user, resetToken) {
+  const resetUrl = buildClientUrl(`/reset-password?token=${encodeURIComponent(resetToken)}`);
+  const displayName = user.name || 'there';
+
+  return {
+    subject: 'Reset your EventManager password',
+    text: [
+      `Hi ${displayName},`,
+      '',
+      'We received a request to reset your password.',
+      `Reset your password here: ${resetUrl}`,
+      `This link expires in ${env.passwordResetTokenTtlMinutes} minutes.`,
+      '',
+      'If you did not request a password reset, you can ignore this email.',
+      '',
+      'EventManager Team',
+    ].join('\n'),
+    html: `
+      <div style="font-family: Arial, sans-serif; background: #f8fafc; padding: 24px; color: #0f172a;">
+        <div style="max-width: 640px; margin: 0 auto; background: #ffffff; border-radius: 18px; padding: 32px; border: 1px solid #e2e8f0;">
+          <div style="font-size: 12px; letter-spacing: 0.2em; text-transform: uppercase; color: #64748b; margin-bottom: 12px;">Password Reset</div>
+          <h1 style="margin: 0 0 12px; font-size: 28px; line-height: 1.2;">Reset your password</h1>
+          <p style="margin: 0 0 20px; font-size: 16px; line-height: 1.6;">Hi ${displayName}, click the button below to set a new password for your EventManager account.</p>
+
+          <a href="${resetUrl}" style="display: inline-block; background: #2563eb; color: #ffffff; text-decoration: none; padding: 12px 20px; border-radius: 999px; font-weight: 600; margin-bottom: 20px;">
+            Reset Password
+          </a>
+
+          <p style="margin: 0 0 12px; font-size: 14px; line-height: 1.6; color: #475569;">This link expires in ${env.passwordResetTokenTtlMinutes} minutes.</p>
+          <p style="margin: 0; font-size: 14px; line-height: 1.6; color: #475569;">If the button does not work, paste this link into your browser:<br /><a href="${resetUrl}" style="color: #2563eb;">${resetUrl}</a></p>
+        </div>
+      </div>
+    `,
+  };
+}
+
+function buildOtpEmail(user, otpCode, purpose) {
+  const displayName = user.name || 'there';
+  const label = purpose === 'signup' ? 'Verify your email' : 'Login verification';
+  const helperText =
+    purpose === 'signup'
+      ? 'Use this OTP to verify your email and finish creating your account.'
+      : 'Use this OTP to complete your login securely.';
+
+  return {
+    subject: `${label} OTP for EventManager`,
+    text: [
+      `Hi ${displayName},`,
+      '',
+      helperText,
+      `Your OTP is: ${otpCode}`,
+      `This OTP expires in ${env.authOtpExpiresInMinutes} minutes.`,
+      '',
+      'If you did not request this code, you can ignore this email.',
+      '',
+      'EventManager Team',
+    ].join('\n'),
+    html: `
+      <div style="font-family: Arial, sans-serif; background: #f8fafc; padding: 24px; color: #0f172a;">
+        <div style="max-width: 640px; margin: 0 auto; background: #ffffff; border-radius: 18px; padding: 32px; border: 1px solid #e2e8f0;">
+          <div style="font-size: 12px; letter-spacing: 0.2em; text-transform: uppercase; color: #64748b; margin-bottom: 12px;">One-Time Password</div>
+          <h1 style="margin: 0 0 12px; font-size: 28px; line-height: 1.2;">${label}</h1>
+          <p style="margin: 0 0 20px; font-size: 16px; line-height: 1.6;">Hi ${displayName}, ${helperText.toLowerCase()}</p>
+
+          <div style="margin: 0 0 20px; padding: 18px 20px; border-radius: 18px; background: #eff6ff; border: 1px solid #bfdbfe; text-align: center;">
+            <div style="font-size: 12px; text-transform: uppercase; letter-spacing: 0.2em; color: #64748b; margin-bottom: 10px;">Your OTP</div>
+            <div style="font-size: 36px; font-weight: 700; letter-spacing: 0.35em; color: #1d4ed8;">${otpCode}</div>
+          </div>
+
+          <p style="margin: 0; font-size: 14px; line-height: 1.6; color: #475569;">This OTP expires in ${env.authOtpExpiresInMinutes} minutes. If you did not request it, you can safely ignore this email.</p>
+        </div>
+      </div>
+    `,
+  };
+}
+
+async function sendWelcomeEmail(user) {
+  try {
+    await sendEmail({ to: user.email, ...buildWelcomeEmail(user) });
+  } catch (error) {
+    console.error(`Failed to send welcome email to ${user.email}: ${error.message}`);
+  }
+}
+
+async function issueOtpChallenge(user, purpose) {
+  const { rawCode, hashedCode, expiresAt } = createOtpCode();
+  user.authOtpCodeHash = hashedCode;
+  user.authOtpExpiresAt = expiresAt;
+  user.authOtpPurpose = purpose;
+  await user.save({ validateBeforeSave: false });
+
+  try {
+    await sendEmail({ to: user.email, ...buildOtpEmail(user, rawCode, purpose) });
+  } catch (error) {
+    clearAuthOtp(user);
+    await user.save({ validateBeforeSave: false });
+    throw error;
+  }
+
+  return {
+    requiresOtp: true,
+    purpose,
+    email: user.email,
+    pendingAuthToken: buildPendingOtpSession(user, purpose),
+    expiresInMinutes: env.authOtpExpiresInMinutes,
+  };
+}
+
+function verifyPendingOtpSession(token) {
+  try {
+    const payload = verifyJwtToken(token);
+    if (!payload?.id || payload?.authStage !== 'otp' || !payload?.purpose) {
+      return null;
+    }
+    return payload;
+  } catch (_) {
+    return null;
+  }
+}
+
+async function resolveOtpUser(pendingAuthToken) {
+  const payload = verifyPendingOtpSession(pendingAuthToken);
+  if (!payload) return { payload: null, user: null };
+
+  const user = await User.findById(payload.id).select(
+    '+password +authOtpCodeHash +authOtpExpiresAt +authOtpPurpose'
+  );
+
+  return { payload, user };
+}
 
 export const signup = async (req, res) => {
+  let user;
+
   try {
-    const { name, email, password, role } = req.body;
+    const name = req.body?.name?.trim();
+    const email = req.body?.email?.trim().toLowerCase();
+    const password = req.body?.password;
+    const role = req.body?.role || 'customer';
+
+    if (!name || !email || !password) {
+      return res.status(400).json({ message: 'Name, email, and password are required' });
+    }
+
     const existing = await User.findOne({ email });
-    if (existing) return res.status(400).json({ message: 'Email already in use' });
-    const user = await User.create({ name, email, password, role });
-    const token = generateJwtToken({ id: user._id, role: user.role, name: user.name });
-    res.status(201).json({ token, user: { id: user._id, name: user.name, email: user.email, role: user.role } });
+    if (existing) {
+      return res.status(400).json({ message: 'Email already in use' });
+    }
+
+    user = await User.create({
+      name,
+      email,
+      password,
+      role,
+      isEmailVerified: false,
+    });
+
+    const otpPayload = await issueOtpChallenge(user, 'signup');
+
+    return res.status(201).json({
+      ...otpPayload,
+      message: 'We sent a verification OTP to your email address.',
+    });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    if (user?._id) {
+      await User.findByIdAndDelete(user._id);
+    }
+    return res.status(500).json({ message: err.message });
   }
 };
 
 export const login = async (req, res) => {
   try {
-    const { email, password } = req.body;
-    const user = await User.findOne({ email }).select('+password');
+    const email = req.body?.email?.trim().toLowerCase();
+    const password = req.body?.password;
+    const user = await User.findOne({ email }).select(
+      '+password +authOtpCodeHash +authOtpExpiresAt +authOtpPurpose'
+    );
+
     if (!user) return res.status(400).json({ message: 'Invalid credentials' });
     if (user.isBlocked) return res.status(403).json({ message: 'User is blocked' });
+
     const valid = await user.comparePassword(password);
     if (!valid) return res.status(400).json({ message: 'Invalid credentials' });
-    const token = generateJwtToken({ id: user._id, role: user.role, name: user.name });
-    res.json({ token, user: { id: user._id, name: user.name, email: user.email, role: user.role } });
+
+    const purpose = user.isEmailVerified ? 'login' : 'signup';
+    const otpPayload = await issueOtpChallenge(user, purpose);
+
+    return res.json({
+      ...otpPayload,
+      message:
+        purpose === 'signup'
+          ? 'Your email is not verified yet. We sent a verification OTP.'
+          : 'We sent a login OTP to your email address.',
+    });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    return res.status(500).json({ message: err.message });
+  }
+};
+
+export const verifyOtp = async (req, res) => {
+  try {
+    const pendingAuthToken = req.body?.pendingAuthToken;
+    const otp = req.body?.otp?.trim();
+
+    if (!pendingAuthToken || !otp) {
+      return res.status(400).json({ message: 'OTP and pending session are required' });
+    }
+
+    const { payload, user } = await resolveOtpUser(pendingAuthToken);
+    if (!payload || !user) {
+      return res.status(400).json({ message: 'OTP session is invalid or has expired.' });
+    }
+
+    if (user.isBlocked) {
+      return res.status(403).json({ message: 'User is blocked' });
+    }
+
+    if (
+      !user.authOtpCodeHash ||
+      user.authOtpPurpose !== payload.purpose ||
+      !user.authOtpExpiresAt ||
+      user.authOtpExpiresAt <= new Date()
+    ) {
+      return res.status(400).json({ message: 'OTP is invalid or has expired.' });
+    }
+
+    if (hashValue(otp) !== user.authOtpCodeHash) {
+      return res.status(400).json({ message: 'Incorrect OTP.' });
+    }
+
+    if (payload.purpose === 'signup') {
+      user.isEmailVerified = true;
+    }
+
+    clearAuthOtp(user);
+    await user.save({ validateBeforeSave: false });
+
+    if (payload.purpose === 'signup') {
+      await sendWelcomeEmail(user);
+    }
+
+    const token = generateJwtToken({ id: user._id, role: user.role, name: user.name });
+    return res.json({
+      token,
+      user: buildAuthPayload(user),
+      message:
+        payload.purpose === 'signup'
+          ? 'Email verified successfully.'
+          : 'Login verified successfully.',
+    });
+  } catch (err) {
+    return res.status(500).json({ message: err.message });
+  }
+};
+
+export const resendOtp = async (req, res) => {
+  try {
+    const pendingAuthToken = req.body?.pendingAuthToken;
+    if (!pendingAuthToken) {
+      return res.status(400).json({ message: 'Pending OTP session is required' });
+    }
+
+    const { payload, user } = await resolveOtpUser(pendingAuthToken);
+    if (!payload || !user) {
+      return res.status(400).json({ message: 'OTP session is invalid or has expired.' });
+    }
+
+    if (user.isBlocked) {
+      return res.status(403).json({ message: 'User is blocked' });
+    }
+
+    if (payload.purpose === 'signup' && user.isEmailVerified) {
+      return res.status(400).json({ message: 'Email is already verified.' });
+    }
+
+    const otpPayload = await issueOtpChallenge(user, payload.purpose);
+
+    return res.json({
+      ...otpPayload,
+      message: 'A new OTP has been sent to your email address.',
+    });
+  } catch (err) {
+    return res.status(500).json({ message: err.message });
+  }
+};
+
+export const forgotPassword = async (req, res) => {
+  const genericMessage = 'If an account exists for that email, a password reset link has been sent.';
+
+  try {
+    const email = req.body?.email?.trim().toLowerCase();
+    if (!email) return res.status(400).json({ message: 'Email is required' });
+
+    const user = await User.findOne({ email });
+    if (!user) return res.json({ message: genericMessage });
+
+    const { rawToken, hashedToken, expiresAt } = createPasswordResetToken();
+    user.passwordResetToken = hashedToken;
+    user.passwordResetExpiresAt = expiresAt;
+    await user.save({ validateBeforeSave: false });
+
+    try {
+      await sendEmail({ to: user.email, ...buildPasswordResetEmail(user, rawToken) });
+    } catch (error) {
+      user.passwordResetToken = undefined;
+      user.passwordResetExpiresAt = undefined;
+      await user.save({ validateBeforeSave: false });
+      return res.status(500).json({ message: 'Unable to send reset email right now. Please try again.' });
+    }
+
+    return res.json({ message: genericMessage });
+  } catch (err) {
+    return res.status(500).json({ message: err.message });
+  }
+};
+
+export const verifyResetPasswordToken = async (req, res) => {
+  try {
+    const token = req.params?.token;
+    if (!token) return res.status(400).json({ message: 'Reset token is required' });
+
+    const hashedToken = hashResetToken(token);
+    const user = await User.findOne({
+      passwordResetToken: hashedToken,
+      passwordResetExpiresAt: { $gt: new Date() },
+    }).select('_id');
+
+    if (!user) {
+      return res.status(400).json({ message: 'This reset link is invalid or has expired.' });
+    }
+
+    return res.json({ message: 'Reset link verified.' });
+  } catch (err) {
+    return res.status(500).json({ message: err.message });
+  }
+};
+
+export const resetPassword = async (req, res) => {
+  try {
+    const token = req.body?.token;
+    const password = req.body?.password;
+
+    if (!token || !password) {
+      return res.status(400).json({ message: 'Token and password are required' });
+    }
+
+    if (password.length < 6) {
+      return res.status(400).json({ message: 'Password must be at least 6 characters' });
+    }
+
+    const hashedToken = hashResetToken(token);
+    const user = await User.findOne({
+      passwordResetToken: hashedToken,
+      passwordResetExpiresAt: { $gt: new Date() },
+    });
+
+    if (!user) {
+      return res.status(400).json({ message: 'This reset link is invalid or has expired.' });
+    }
+
+    user.password = password;
+    user.passwordResetToken = undefined;
+    user.passwordResetExpiresAt = undefined;
+    await user.save();
+
+    return res.json({ message: 'Password reset successful. Please log in with your new password.' });
+  } catch (err) {
+    return res.status(500).json({ message: err.message });
   }
 };
 
@@ -33,10 +484,17 @@ export const me = async (req, res) => {
   try {
     const user = await User.findById(req.user.id).lean();
     if (!user) return res.status(404).json({ message: 'Not found' });
-    res.json({ user: { id: user._id, name: user.name, email: user.email, role: user.role, points: user.points } });
+    return res.json({
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        points: user.points,
+        isEmailVerified: user.isEmailVerified,
+      },
+    });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    return res.status(500).json({ message: err.message });
   }
 };
-
-

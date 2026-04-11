@@ -17,8 +17,24 @@ export default function Signup() {
     setError('');
     try {
       const res = await axios.post('/api/auth/signup', { name, email, password, role });
+      if (res.data?.requiresOtp) {
+        const query = new URLSearchParams({
+          token: res.data.pendingAuthToken,
+          email: res.data.email || email,
+          purpose: res.data.purpose || 'signup',
+        }).toString();
+
+        nav(`/verify-otp?${query}`, {
+          state: {
+            message:
+              res.data?.message || 'Enter the OTP sent to your email to verify your account.',
+          },
+        });
+        return;
+      }
+
       login(res.data);
-      nav('/');
+      nav('/dashboard');
     } catch (err) {
       setError(err.response?.data?.message || 'Signup failed');
     }

@@ -16,7 +16,11 @@ export const updateEvent = async (req, res) => {
     const posterUrl = req.file ? `/uploads/${req.file.filename}` : undefined;
     const update = { ...req.body };
     if (posterUrl) update.posterUrl = posterUrl;
-    const event = await Event.findOneAndUpdate({ _id: req.params.id, organizer: req.user.id }, update, { new: true });
+    const filter =
+      req.user.role === 'admin'
+        ? { _id: req.params.id }
+        : { _id: req.params.id, organizer: req.user.id };
+    const event = await Event.findOneAndUpdate(filter, update, { new: true });
     if (!event) return res.status(404).json({ message: 'Event not found' });
     res.json({ event });
   } catch (err) {
@@ -26,7 +30,11 @@ export const updateEvent = async (req, res) => {
 
 export const deleteEvent = async (req, res) => {
   try {
-    const event = await Event.findOneAndDelete({ _id: req.params.id, organizer: req.user.id });
+    const filter =
+      req.user.role === 'admin'
+        ? { _id: req.params.id }
+        : { _id: req.params.id, organizer: req.user.id };
+    const event = await Event.findOneAndDelete(filter);
     if (!event) return res.status(404).json({ message: 'Event not found' });
     res.json({ message: 'Deleted' });
   } catch (err) {
@@ -53,11 +61,12 @@ export const getEvent = async (req, res) => {
   try {
     const event = await Event.findById(req.params.id).populate('organizer', 'name');
     if (!event) return res.status(404).json({ message: 'Not found' });
-    const count = await Registration.countDocuments({ event: event._id, status: { $ne: 'cancelled' } });
+    const count = await Registration.countDocuments({
+      event: event._id,
+      status: { $in: ['registered', 'attended'] },
+    });
     res.json({ event, registrations: count });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
 };
-
-

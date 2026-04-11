@@ -18,6 +18,8 @@ import registrationRoutes from './routes/registrationRoutes.js';
 import reviewRoutes from './routes/reviewRoutes.js';
 import adminRoutes from './routes/adminRoutes.js';
 import statsRoutes from './routes/statsRoutes.js';
+import ticketRoutes from './routes/ticketRoutes.js';
+import { startTicketHoldCleanupLoop } from './services/ticketing.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -48,6 +50,7 @@ app.use('/api/registrations', registrationRoutes);
 app.use('/api/reviews', reviewRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/stats', statsRoutes);
+app.use('/api/tickets', ticketRoutes);
 
 // 404 handler
 app.use((req, res) => {
@@ -64,11 +67,11 @@ app.use((err, req, res, next) => {
 async function start() {
   await connectDB();
   initSocket(server, env.clientUrl);
+  startTicketHoldCleanupLoop();
   server.listen(env.port, () => {
     console.log(`Server running on http://localhost:${env.port}`);
   });
 }
 
 start();
-
 

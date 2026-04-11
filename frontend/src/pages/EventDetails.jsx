@@ -1,10 +1,19 @@
 import { useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import axios from 'axios';
 import { useAuth } from '../context/AuthContext.jsx';
 
+function formatCurrency(amount, currency = 'INR') {
+  return new Intl.NumberFormat('en-IN', {
+    style: 'currency',
+    currency,
+    maximumFractionDigits: 2,
+  }).format(amount || 0);
+}
+
 export default function EventDetails() {
   const { id } = useParams();
+  const navigate = useNavigate();
   const { user } = useAuth();
   const [event, setEvent] = useState(null);
   const [reviews, setReviews] = useState([]);
@@ -37,9 +46,14 @@ export default function EventDetails() {
     }
   }
 
-  async function register() {
-    await axios.post(`/api/registrations/${id}/register`);
-    showToast('success', 'Registered! Check your email for confirmation.');
+  function register() {
+    if (!user) {
+      showToast('warning', 'Please log in to continue to booking.');
+      navigate('/login');
+      return;
+    }
+
+    navigate(`/events/${id}/booking`);
   }
 
   function shareEvent() {
@@ -105,8 +119,14 @@ export default function EventDetails() {
           <h1 className="text-2xl font-bold">{event.title}</h1>
           <p className="text-slate-700 mt-2 dark:text-slate-300">{event.description}</p>
           <div className="text-sm text-slate-500 mt-2 dark:text-slate-400">{new Date(event.date).toLocaleString()} • {event.location}</div>
+          <div className="text-sm text-slate-500 mt-2 dark:text-slate-400">
+            Permanent booking:{' '}
+            {Number(event.permanentBookingPrice || 0) > 0
+              ? formatCurrency(event.permanentBookingPrice, event.currency || 'INR')
+              : 'Not available'}
+          </div>
           <div className="flex gap-2 mt-3">
-            <button className="btn" onClick={register} disabled={!user}>Register</button>
+            <button className="btn" onClick={register}>Register</button>
             <button className="btn-outline" onClick={shareEvent}>Share</button>
             <button className="btn-outline" onClick={downloadIcs}>Add to Calendar</button>
           </div>

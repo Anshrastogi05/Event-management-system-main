@@ -9,12 +9,15 @@ axios.defaults.baseURL = '' // same origin proxy
 // Ensure theme is applied immediately on app bootstrap
 function applyThemeFromStorage() {
   try {
+    const theme = localStorage.getItem('theme') || 'light';
     const root = document.documentElement;
     const body = document.body;
-    // Always force LIGHT
-    root.classList.remove('dark');
-    body && body.classList.remove('dark');
-    localStorage.setItem('theme','light');
+    const isDark = theme === 'dark';
+
+    root.classList.toggle('dark', isDark);
+    body && body.classList.toggle('dark', isDark);
+    localStorage.setItem('theme', theme);
+
     // expose for debugging
     window.theme = {
       get: () => localStorage.getItem('theme'),

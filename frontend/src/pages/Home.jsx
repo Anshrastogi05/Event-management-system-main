@@ -14,7 +14,7 @@ export default function Home() {
   const [category, setCategory] = useState('');
   const categories = ['All','Tech','Sports','Cultural','Workshop'];
   const { announcements } = useSocket(window.location.origin);
-  const { user } = useAuth();
+  const { user, token } = useAuth();
 
   useEffect(() => {
     fetchEvents();
@@ -22,9 +22,9 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    if (user) fetchRecs();
+    if (user && token) fetchRecs();
     else setRecs([]);
-  }, [user]);
+  }, [token, user]);
 
   async function fetchEvents(overrides = {}) {
     setLoading(true);
@@ -46,7 +46,9 @@ export default function Home() {
 
   async function fetchRecs() {
     try {
-      const res = await axios.get('/api/stats/recommendations');
+      const res = await axios.get('/api/stats/recommendations', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
       setRecs(res.data.events || []);
     } catch (_) {}
   }
