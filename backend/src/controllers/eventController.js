@@ -1,9 +1,13 @@
 import Event from '../models/Event.js';
 import Registration from '../models/Registration.js';
+import { storeUploadedImage } from '../utils/upload.js';
 
 export const createEvent = async (req, res) => {
   try {
-    const posterUrl = req.file ? `/uploads/${req.file.filename}` : undefined;
+    const uploadedPoster = req.file
+      ? await storeUploadedImage(req.file, { folder: 'events' })
+      : null;
+    const posterUrl = uploadedPoster?.url;
     const event = await Event.create({ ...req.body, organizer: req.user.id, posterUrl });
     res.status(201).json({ event });
   } catch (err) {
@@ -13,7 +17,10 @@ export const createEvent = async (req, res) => {
 
 export const updateEvent = async (req, res) => {
   try {
-    const posterUrl = req.file ? `/uploads/${req.file.filename}` : undefined;
+    const uploadedPoster = req.file
+      ? await storeUploadedImage(req.file, { folder: 'events' })
+      : null;
+    const posterUrl = uploadedPoster?.url;
     const update = { ...req.body };
     if (posterUrl) update.posterUrl = posterUrl;
     const filter =

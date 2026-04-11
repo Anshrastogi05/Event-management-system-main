@@ -14,6 +14,7 @@ import {
   mapTicketShowSummary,
 } from '../services/ticketing.js';
 import { sendEmail } from '../utils/email.js';
+import { storeUploadedImage } from '../utils/upload.js';
 
 function formatBooking(bookingDoc, showDoc = null) {
   const booking = bookingDoc.toObject ? bookingDoc.toObject() : bookingDoc;
@@ -187,7 +188,10 @@ export const updateTicketShowPoster = async (req, res) => {
       return res.status(404).json({ message: 'Ticket show not found' });
     }
 
-    const posterUrl = `/uploads/${req.file.filename}`;
+    const uploadedPoster = await storeUploadedImage(req.file, {
+      folder: 'ticket-shows',
+    });
+    const posterUrl = uploadedPoster?.url;
     await TicketShow.updateMany(
       {
         type: sourceShow.type,
