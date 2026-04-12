@@ -21,9 +21,15 @@ function parseClientUrls(...values) {
   return [...uniqueUrls];
 }
 
-const defaultClientUrl = "http://localhost:5173";
+const defaultClientUrls = ["http://localhost:5173"];
 const clientUrls = parseClientUrls(process.env.CLIENT_URLS, process.env.CLIENT_URL);
-const allowedClientUrls = clientUrls.length ? clientUrls : [defaultClientUrl];
+const allowedClientUrls = clientUrls.length ? clientUrls : defaultClientUrls;
+const primaryClientUrl =
+  normalizeUrl(process.env.CLIENT_URL) ||
+  allowedClientUrls.find(
+    (url) => !["localhost", "127.0.0.1"].some((host) => url.includes(host)),
+  ) ||
+  allowedClientUrls[0];
 
 if (!process.env.JWT_SECRET) {
   throw new Error("JWT_SECRET is required");
@@ -46,7 +52,7 @@ export const env = {
   ),
   authOtpSessionExpiresIn: process.env.AUTH_OTP_SESSION_EXPIRES_IN || "15m",
 
-  clientUrl: allowedClientUrls[0],
+  clientUrl: primaryClientUrl,
   clientUrls: allowedClientUrls,
 
   passwordResetTokenTtlMinutes: Number(
