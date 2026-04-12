@@ -2,6 +2,29 @@ import dotenv from "dotenv";
 
 dotenv.config();
 
+function normalizeUrl(value = "") {
+  return value.trim().replace(/\/+$/, "");
+}
+
+function parseClientUrls(...values) {
+  const uniqueUrls = new Set();
+
+  for (const value of values) {
+    if (!value) continue;
+
+    for (const entry of value.split(",")) {
+      const normalizedEntry = normalizeUrl(entry);
+      if (normalizedEntry) uniqueUrls.add(normalizedEntry);
+    }
+  }
+
+  return [...uniqueUrls];
+}
+
+const defaultClientUrl = "http://localhost:5173";
+const clientUrls = parseClientUrls(process.env.CLIENT_URLS, process.env.CLIENT_URL);
+const allowedClientUrls = clientUrls.length ? clientUrls : [defaultClientUrl];
+
 if (!process.env.JWT_SECRET) {
   throw new Error("JWT_SECRET is required");
 }
@@ -23,7 +46,8 @@ export const env = {
   ),
   authOtpSessionExpiresIn: process.env.AUTH_OTP_SESSION_EXPIRES_IN || "15m",
 
-  clientUrl: process.env.CLIENT_URL || "http://localhost:5173",
+  clientUrl: allowedClientUrls[0],
+  clientUrls: allowedClientUrls,
 
   passwordResetTokenTtlMinutes: Number(
     process.env.PASSWORD_RESET_TOKEN_TTL_MINUTES || 30,
@@ -45,5 +69,10 @@ export const env = {
 
   ticketHoldMinutes: Number(process.env.TICKET_HOLD_MINUTES || 8),
 };
+
+export function isAllowedClientOrigin(origin) {
+  const normalizedOrigin = normalizeUrl(origin || "");
+  return !normalizedOrigin || env.clientUrls.includes(normalizedOrigin);
+}
 
 export default env;

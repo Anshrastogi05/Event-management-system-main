@@ -9,7 +9,7 @@ import cookieParser from 'cookie-parser';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
-import { env } from './config/env.js';
+import { env, isAllowedClientOrigin } from './config/env.js';
 import { connectDB } from './config/db.js';
 import { initSocket } from './services/socket.js';
 import authRoutes from './routes/authRoutes.js';
@@ -29,7 +29,18 @@ const server = http.createServer(app);
 
 // Security & utils
 app.use(helmet());
-app.use(cors({ origin: env.clientUrl, credentials: true }));
+app.use(
+  cors({
+    origin(origin, callback) {
+      if (isAllowedClientOrigin(origin)) {
+        return callback(null, true);
+      }
+
+      return callback(new Error(`Origin ${origin} is not allowed by CORS`));
+    },
+    credentials: true,
+  })
+);
 app.use(morgan('dev'));
 app.use(express.json({ limit: '2mb' }));
 app.use(express.urlencoded({ extended: true }));
@@ -66,7 +77,7 @@ app.use((err, req, res, next) => {
 
 async function start() {
   await connectDB();
-  initSocket(server, env.clientUrl);
+  initSocket(server);
   startTicketHoldCleanupLoop();
   server.listen(env.port, () => {
     console.log(`Server running on http://localhost:${env.port}`);

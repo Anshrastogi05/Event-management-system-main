@@ -1,4 +1,5 @@
 import { Server } from 'socket.io';
+import { isAllowedClientOrigin } from '../config/env.js';
 
 let ioInstance = null;
 
@@ -6,9 +7,18 @@ function ticketRoom(showId) {
   return `ticket-show:${showId}`;
 }
 
-export function initSocket(server, clientOrigin) {
+export function initSocket(server) {
   ioInstance = new Server(server, {
-    cors: { origin: clientOrigin, credentials: true },
+    cors: {
+      origin(origin, callback) {
+        if (isAllowedClientOrigin(origin)) {
+          return callback(null, true);
+        }
+
+        return callback(new Error(`Origin ${origin} is not allowed by Socket.IO CORS`));
+      },
+      credentials: true,
+    },
   });
 
   ioInstance.on('connection', (socket) => {

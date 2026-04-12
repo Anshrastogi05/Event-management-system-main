@@ -13,7 +13,7 @@ export default function Home() {
   const [q, setQ] = useState('');
   const [category, setCategory] = useState('');
   const categories = ['All','Tech','Sports','Cultural','Workshop'];
-  const { announcements } = useSocket(window.location.origin);
+  const { announcements } = useSocket();
   const { user, token } = useAuth();
 
   useEffect(() => {

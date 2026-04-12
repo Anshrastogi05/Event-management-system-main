@@ -3,11 +3,8 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import axios from 'axios';
 import { io } from 'socket.io-client';
 import { useAuth } from '../context/AuthContext.jsx';
+import { SOCKET_URL } from '../config/network.js';
 import { loadRazorpayCheckout } from '../utils/loadRazorpayCheckout.js';
-
-const SOCKET_URL =
-  import.meta.env.VITE_SOCKET_URL ||
-  (import.meta.env.DEV ? 'http://localhost:5050' : window.location.origin);
 
 function formatCurrency(amount, currency = 'INR') {
   return new Intl.NumberFormat('en-IN', {
