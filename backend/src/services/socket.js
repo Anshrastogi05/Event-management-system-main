@@ -31,4 +31,3 @@ export function initSocket(server, clientOrigin) {
 export function emitTicketSeatMap(showId, payload) {
   ioInstance?.to(ticketRoom(showId)).emit('tickets:seat-map', payload);
 }
-
