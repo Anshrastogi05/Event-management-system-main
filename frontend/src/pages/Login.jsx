@@ -19,9 +19,12 @@ export default function Login() {
       const res = await axios.post('/api/auth/login', { email, password });
       if (res.data?.requiresOtp) {
         const query = new URLSearchParams({
-          token: res.data.pendingAuthToken,
           email: res.data.email || email,
           purpose: res.data.purpose || 'login',
+          ...(res.data.expiresAt ? { expiresAt: res.data.expiresAt } : {}),
+          ...(res.data.resendAvailableAt
+            ? { resendAvailableAt: res.data.resendAvailableAt }
+            : {}),
         }).toString();
 
         nav(`/verify-otp?${query}`, {

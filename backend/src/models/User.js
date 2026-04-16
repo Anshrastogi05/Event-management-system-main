@@ -15,6 +15,8 @@ const userSchema = new mongoose.Schema(
     authOtpCodeHash: { type: String, select: false },
     authOtpExpiresAt: { type: Date, select: false },
     authOtpPurpose: { type: String, enum: ['signup', 'login'], select: false },
+    authOtpAttempts: { type: Number, default: 0, select: false },
+    lastOtpSentAt: { type: Date, select: false },
     passwordResetToken: { type: String, select: false },
     passwordResetExpiresAt: { type: Date, select: false },
   },

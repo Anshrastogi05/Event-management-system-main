@@ -48,9 +48,12 @@ export const env = {
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || "7d",
 
   authOtpExpiresInMinutes: Number(
-    process.env.AUTH_OTP_EXPIRES_IN_MINUTES || 10,
+    process.env.AUTH_OTP_EXPIRES_IN_MINUTES || 5,
   ),
-  authOtpSessionExpiresIn: process.env.AUTH_OTP_SESSION_EXPIRES_IN || "15m",
+  authOtpMaxAttempts: Number(process.env.AUTH_OTP_MAX_ATTEMPTS || 5),
+  authOtpResendCooldownSeconds: Number(
+    process.env.AUTH_OTP_RESEND_COOLDOWN_SECONDS || 60,
+  ),
 
   clientUrl: primaryClientUrl,
   clientUrls: allowedClientUrls,

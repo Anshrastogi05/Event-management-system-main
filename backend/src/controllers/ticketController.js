@@ -1,4 +1,5 @@
-import TicketShow from '../models/TicketShow.js';
+import Movie from "../models/Movie.js";
+import Show from "../models/Show.js";
 import TicketBooking from '../models/TicketBooking.js';
 import TicketSeatReservation from '../models/TicketSeatReservation.js';
 import { env } from '../config/env.js';
@@ -9,8 +10,11 @@ import {
   buildSeatSnapshot,
   cancelActiveBookingsForUser,
   cleanupExpiredTicketHolds,
+  findHydratedTicketShowById,
   generateTicketBookingReference,
   getTicketHoldDurationMs,
+  hydrateTicketShows,
+  listHydratedTicketShows,
   mapTicketShowSummary,
 } from '../services/ticketing.js';
 import { sendEmail } from '../utils/email.js';
@@ -94,7 +98,7 @@ function normalizeCurrency(currency) {
 }
 
 async function getShowWithReservations(showId) {
-  const show = await TicketShow.findById(showId);
+  const show = await findHydratedTicketShowById(showId);
   if (!show) return null;
 
   await cleanupExpiredTicketHolds(showId);
@@ -107,36 +111,41 @@ export const listTicketShows = async (req, res) => {
     await ensureTicketShowsSeeded();
     await cleanupExpiredTicketHolds();
 
-    const filter = {};
-    if (req.query.type && ['movie', 'concert', 'match'].includes(req.query.type)) {
-      filter.type = req.query.type;
-    }
-    if (req.query.title) {
-      filter.title = req.query.title;
-    }
-    if (req.query.city) {
-      filter.city = req.query.city;
-    }
-    if (req.query.venue) {
-      filter.venue = req.query.venue;
-    }
-    if (req.query.day) {
-      const start = new Date(req.query.day);
-      if (!Number.isNaN(start.getTime())) {
-        const end = new Date(start);
-        end.setDate(end.getDate() + 1);
-        filter.date = { $gte: start, $lt: end };
-      }
-    }
-    if (req.query.q) {
-      filter.$or = [
-        { title: { $regex: req.query.q, $options: 'i' } },
-        { venue: { $regex: req.query.q, $options: 'i' } },
-        { city: { $regex: req.query.q, $options: 'i' } },
-      ];
-    }
+    const start = req.query.day ? new Date(req.query.day) : null;
+    const end =
+      start && !Number.isNaN(start.getTime())
+        ? new Date(start.getTime() + 24 * 60 * 60 * 1000)
+        : null;
+    const queryText = String(req.query.q || "").trim().toLowerCase();
+    const titleFilter = String(req.query.title || "").trim().toLowerCase();
+    const cityFilter = String(req.query.city || "").trim().toLowerCase();
+    const venueFilter = String(req.query.venue || "").trim().toLowerCase();
 
-    const shows = await TicketShow.find(filter).sort({ date: 1 });
+    const allShows = await listHydratedTicketShows();
+    const shows = allShows.filter((show) => {
+      if (req.query.type && req.query.type !== "movie") return false;
+      if (titleFilter && show.title?.toLowerCase() !== titleFilter) return false;
+      if (cityFilter && show.city?.toLowerCase() !== cityFilter) return false;
+      if (venueFilter && show.venue?.toLowerCase() !== venueFilter) return false;
+
+      if (start && end && !Number.isNaN(start.getTime())) {
+        const showTime = new Date(show.date).getTime();
+        if (showTime < start.getTime() || showTime >= end.getTime()) {
+          return false;
+        }
+      }
+
+      if (queryText) {
+        const haystack = [show.title, show.venue, show.city]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase();
+        if (!haystack.includes(queryText)) return false;
+      }
+
+      return true;
+    });
+
     const showIds = shows.map((show) => show._id);
     const reservations = await TicketSeatReservation.find({ show: { $in: showIds } }).lean();
     const reservationMap = new Map();
@@ -183,7 +192,7 @@ export const updateTicketShowPoster = async (req, res) => {
       return res.status(400).json({ message: 'Please upload an image file.' });
     }
 
-    const sourceShow = await TicketShow.findById(req.params.id);
+    const sourceShow = await findHydratedTicketShowById(req.params.id);
     if (!sourceShow) {
       return res.status(404).json({ message: 'Ticket show not found' });
     }
@@ -192,15 +201,8 @@ export const updateTicketShowPoster = async (req, res) => {
       folder: 'ticket-shows',
     });
     const posterUrl = uploadedPoster?.url;
-    await TicketShow.updateMany(
-      {
-        type: sourceShow.type,
-        title: sourceShow.title,
-      },
-      { posterUrl }
-    );
-
-    const updatedShow = await TicketShow.findById(req.params.id);
+    await Movie.updateOne({ movie_id: sourceShow.movie_id }, { posterUrl });
+    const updatedShow = await findHydratedTicketShowById(req.params.id);
 
     res.json({
       message: `Poster updated for ${sourceShow.title}.`,
@@ -223,11 +225,22 @@ export const myTicketBookings = async (req, res) => {
       if (statuses.length) filter.status = { $in: statuses };
     }
 
-    const bookings = await TicketBooking.find(filter)
-      .populate('show')
-      .sort({ createdAt: -1 });
+    const bookings = await TicketBooking.find(filter).sort({ createdAt: -1 });
+    const showIds = [...new Set(bookings.map((booking) => String(booking.show)).filter(Boolean))];
+    const shows = await Show.find({ _id: { $in: showIds } });
+    const hydratedShows = await hydrateTicketShows(shows);
+    const showsById = new Map(
+      hydratedShows.map((show) => [
+        String(show._id),
+        mapTicketShowSummary(show, show.counters || { total: show.seats.length, available: 0, held: 0, booked: 0 }),
+      ]),
+    );
 
-    res.json({ bookings: bookings.map((booking) => formatBooking(booking)) });
+    res.json({
+      bookings: bookings.map((booking) =>
+        formatBooking(booking, showsById.get(String(booking.show))),
+      ),
+    });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -311,14 +324,14 @@ export const holdTicketSeats = async (req, res) => {
 
 export const releaseTicketHold = async (req, res) => {
   try {
-    const booking = await TicketBooking.findOne({ _id: req.params.id, user: req.user.id }).populate('show');
+    const booking = await TicketBooking.findOne({ _id: req.params.id, user: req.user.id });
     if (!booking) return res.status(404).json({ message: 'Booking not found' });
     if (booking.status === 'paid') return res.status(400).json({ message: 'Paid bookings cannot be released' });
 
     booking.status = 'cancelled';
     await booking.save();
     await TicketSeatReservation.deleteMany({ booking: booking._id, status: 'held' });
-    await broadcastTicketSeatState(booking.show._id);
+    await broadcastTicketSeatState(booking.show);
 
     res.json({ message: 'Seat hold released' });
   } catch (err) {
@@ -328,18 +341,21 @@ export const releaseTicketHold = async (req, res) => {
 
 export const createTicketPaymentOrder = async (req, res) => {
   try {
-    const booking = await TicketBooking.findOne({ _id: req.params.id, user: req.user.id }).populate('show');
+    const booking = await TicketBooking.findOne({ _id: req.params.id, user: req.user.id });
     if (!booking) return res.status(404).json({ message: 'Booking not found' });
     if (booking.status === 'paid') return res.status(400).json({ message: 'Booking is already paid' });
     if (!['held', 'pending_payment'].includes(booking.status)) {
       return res.status(400).json({ message: 'This booking is no longer active. Please select your seats again.' });
     }
 
+    const show = await findHydratedTicketShowById(booking.show);
+    if (!show) return res.status(404).json({ message: 'Ticket show not found' });
+
     if (booking.holdExpiresAt && booking.holdExpiresAt <= new Date()) {
       booking.status = 'expired';
       await booking.save();
       await TicketSeatReservation.deleteMany({ booking: booking._id, status: 'held' });
-      await broadcastTicketSeatState(booking.show._id);
+      await broadcastTicketSeatState(booking.show);
       return res.status(400).json({ message: 'Seat hold expired. Please choose seats again.' });
     }
 
@@ -349,7 +365,7 @@ export const createTicketPaymentOrder = async (req, res) => {
       receipt: booking.bookingReference,
       notes: {
         bookingReference: booking.bookingReference,
-        showId: String(booking.show._id),
+        showId: String(booking.show),
         userId: String(req.user.id),
       },
     });
@@ -357,12 +373,12 @@ export const createTicketPaymentOrder = async (req, res) => {
     booking.razorpayOrderId = order.id;
     booking.status = 'pending_payment';
     await booking.save();
-    await broadcastTicketSeatState(booking.show._id);
+    await broadcastTicketSeatState(booking.show);
 
     res.json({
       keyId: env.razorpayKeyId,
       order,
-      booking: formatBooking(booking, booking.show),
+      booking: formatBooking(booking, mapTicketShowSummary(show, { total: show.seats.length, available: 0, held: 0, booked: 0 })),
     });
   } catch (err) {
     res.status(err.status || 500).json({ message: err.message });
@@ -371,8 +387,10 @@ export const createTicketPaymentOrder = async (req, res) => {
 
 export const verifyTicketPayment = async (req, res) => {
   try {
-    const booking = await TicketBooking.findOne({ _id: req.params.id, user: req.user.id }).populate('show');
+    const booking = await TicketBooking.findOne({ _id: req.params.id, user: req.user.id });
     if (!booking) return res.status(404).json({ message: 'Booking not found' });
+    const show = await findHydratedTicketShowById(booking.show);
+    if (!show) return res.status(404).json({ message: 'Ticket show not found' });
 
     const orderId = req.body?.razorpay_order_id;
     const paymentId = req.body?.razorpay_payment_id;
@@ -418,17 +436,25 @@ export const verifyTicketPayment = async (req, res) => {
 
     try {
       if (req.user.email) {
-        const emailContent = buildTicketEmail(req.user, booking, booking.show);
+        const emailContent = buildTicketEmail(req.user, booking, show);
         await sendEmail({ to: req.user.email, ...emailContent });
       }
     } catch (emailErr) {
       console.error(`Failed to send ticket email to ${req.user.email}: ${emailErr.message}`);
     }
 
-    await broadcastTicketSeatState(booking.show._id);
+    await broadcastTicketSeatState(booking.show);
 
     res.json({
-      booking: formatBooking(booking, booking.show),
+      booking: formatBooking(
+        booking,
+        mapTicketShowSummary(show, {
+          total: show.seats.length,
+          available: 0,
+          held: 0,
+          booked: 0,
+        }),
+      ),
       payment,
     });
   } catch (err) {

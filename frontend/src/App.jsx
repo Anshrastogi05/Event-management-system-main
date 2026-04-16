@@ -177,7 +177,7 @@ function Layout({ children }) {
         </section>
       ) : null}
 
-      <main className="mx-auto max-w-6xl flex-1 p-4">{children}</main>
+      <main className="max-w-10xl flex-1 p-6">{children}</main>
 
       <footer className="mt-10 border-t border-gray-200 bg-white/50 backdrop-blur-sm dark:border-slate-700 dark:bg-slate-900/50">
         <div className="mx-auto flex max-w-7xl flex-col gap-4 px-4 py-5 text-sm text-gray-600 dark:text-slate-400 sm:px-6 lg:flex-row lg:items-center lg:justify-between lg:px-8">

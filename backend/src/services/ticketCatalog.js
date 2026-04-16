@@ -1,122 +1,243 @@
-import TicketShow from '../models/TicketShow.js';
-import { expandSeatLayout } from '../utils/ticketSeats.js';
+import Movie from "../models/Movie.js";
+import Screen from "../models/Screen.js";
+import Seat from "../models/Seat.js";
+import Show from "../models/Show.js";
+import Theater from "../models/Theater.js";
+import TicketBooking from "../models/TicketBooking.js";
+import TicketSeatReservation from "../models/TicketSeatReservation.js";
+import LegacyTicketShow from "../models/TicketShow.js";
+import { createCatalogId } from "../utils/catalogIds.js";
+import { expandSeatLayout } from "../utils/ticketSeats.js";
+import { listHydratedTicketShows } from "./ticketing.js";
 
 function buildTicketSeedData() {
   const now = Date.now();
 
   return [
     {
-      type: 'movie',
-      title: 'Midnight Multiverse',
-      subtitle: 'Sci-fi premiere screening',
-      description: 'A multiverse action film with immersive surround sound and recliner seating.',
-      venue: 'Galaxy Cinemas',
-      city: 'Delhi',
+      title: "Midnight Multiverse",
+      genre: "Sci-Fi",
+      duration: 148,
+      rating: 8.4,
+      subtitle: "Sci-fi premiere screening",
+      description:
+        "A multiverse action film with immersive surround sound and recliner seating.",
+      venue: "Galaxy Cinemas",
+      city: "Delhi",
+      screenName: "Aurora Screen",
       date: new Date(now + 2 * 24 * 60 * 60 * 1000 + 19 * 60 * 60 * 1000),
-      durationMinutes: 148,
-      language: 'English',
+      language: "English",
       featured: true,
-      tags: ['3D', 'Premiere'],
-      seats: expandSeatLayout([
-        { name: 'Luxe', rows: ['A', 'B'], seatsPerRow: 8, price: 420 },
-        { name: 'Prime', rows: ['C', 'D'], seatsPerRow: 10, price: 280 },
-        { name: 'Classic', rows: ['E', 'F'], seatsPerRow: 10, price: 180 },
-      ]),
+      tags: ["3D", "Premiere"],
+      seatSections: [
+        { name: "Royal", rows: ["A", "B"], seatsPerRow: 8, price: 420 },
+        { name: "Prime", rows: ["C", "D"], seatsPerRow: 10, price: 280 },
+        { name: "Classic", rows: ["E", "F"], seatsPerRow: 10, price: 180 },
+      ],
     },
     {
-      type: 'movie',
-      title: 'Crimson Casefiles',
-      subtitle: 'Mystery thriller night show',
-      description: 'A detective thriller with immersive Dolby sound and a late-night city vibe.',
-      venue: 'Metro Screens',
-      city: 'Mumbai',
+      title: "Crimson Cipher",
+      genre: "Thriller",
+      duration: 132,
+      rating: 7.8,
+      subtitle: "Mystery thriller night show",
+      description:
+        "A detective thriller with immersive Dolby sound and a late-night city vibe.",
+      venue: "Metro Screens",
+      city: "Mumbai",
+      screenName: "Noir Screen",
       date: new Date(now + 4 * 24 * 60 * 60 * 1000 + 21 * 60 * 60 * 1000),
-      durationMinutes: 132,
-      language: 'Hindi',
-      tags: ['Thriller'],
-      seats: expandSeatLayout([
-        { name: 'Royal', rows: ['A', 'B'], seatsPerRow: 7, price: 360 },
-        { name: 'Premier', rows: ['C', 'D', 'E'], seatsPerRow: 9, price: 230 },
-        { name: 'Standard', rows: ['F', 'G'], seatsPerRow: 10, price: 160 },
-      ]),
-    },
-    {
-      type: 'concert',
-      title: 'Neon Verse Live',
-      subtitle: 'Electronic-pop arena show',
-      description: 'An arena-sized concert with LED visuals, floor energy, and singalong sections.',
-      venue: 'Indira Arena',
-      city: 'Bengaluru',
-      date: new Date(now + 6 * 24 * 60 * 60 * 1000 + 18 * 60 * 60 * 1000),
-      durationMinutes: 180,
-      featured: true,
-      tags: ['Live', 'Arena'],
-      seats: expandSeatLayout([
-        { name: 'Pit VIP', rows: ['A', 'B'], seatsPerRow: 6, price: 2999 },
-        { name: 'Premium Bowl', rows: ['C', 'D', 'E'], seatsPerRow: 8, price: 1899 },
-        { name: 'Main Bowl', rows: ['F', 'G', 'H'], seatsPerRow: 10, price: 999 },
-      ]),
-    },
-    {
-      type: 'concert',
-      title: 'Strings Under Stars',
-      subtitle: 'Acoustic sunset performance',
-      description: 'A candlelit acoustic concert with intimate seating and curated artist sets.',
-      venue: 'Riverfront Stage',
-      city: 'Jaipur',
-      date: new Date(now + 9 * 24 * 60 * 60 * 1000 + 17 * 60 * 60 * 1000),
-      durationMinutes: 140,
-      tags: ['Acoustic', 'Outdoor'],
-      seats: expandSeatLayout([
-        { name: 'Front Circle', rows: ['A', 'B'], seatsPerRow: 8, price: 1999 },
-        { name: 'Garden Seats', rows: ['C', 'D', 'E'], seatsPerRow: 10, price: 1199 },
-        { name: 'Open Lawn', rows: ['F', 'G'], seatsPerRow: 12, price: 699 },
-      ]),
-    },
-    {
-      type: 'match',
-      title: 'City Derby Clash',
-      subtitle: 'Premier football showdown',
-      description: 'Two rivals meet under floodlights for a high-energy stadium football night.',
-      venue: 'National Sports Dome',
-      city: 'Kolkata',
-      date: new Date(now + 3 * 24 * 60 * 60 * 1000 + 20 * 60 * 60 * 1000),
-      durationMinutes: 150,
-      featured: true,
-      tags: ['Football', 'Derby'],
-      seats: expandSeatLayout([
-        { name: 'Pavilion', rows: ['A', 'B', 'C'], seatsPerRow: 8, price: 2200 },
-        { name: 'East Stand', rows: ['D', 'E', 'F'], seatsPerRow: 10, price: 1300 },
-        { name: 'Fan Zone', rows: ['G', 'H'], seatsPerRow: 12, price: 750 },
-      ]),
-    },
-    {
-      type: 'match',
-      title: 'Championship Cricket Night',
-      subtitle: 'Weekend T20 special',
-      description: 'A fast-paced night match with premium hospitality seats and fan stand sections.',
-      venue: 'Emerald Cricket Park',
-      city: 'Hyderabad',
-      date: new Date(now + 11 * 24 * 60 * 60 * 1000 + 19 * 60 * 60 * 1000),
-      durationMinutes: 220,
-      tags: ['Cricket', 'Weekend'],
-      seats: expandSeatLayout([
-        { name: 'Club House', rows: ['A', 'B'], seatsPerRow: 8, price: 2600 },
-        { name: 'North Stand', rows: ['C', 'D', 'E'], seatsPerRow: 10, price: 1450 },
-        { name: 'Boundary Stand', rows: ['F', 'G', 'H'], seatsPerRow: 10, price: 850 },
-      ]),
+      language: "Hindi",
+      tags: ["Thriller"],
+      seatSections: [
+        { name: "Royal", rows: ["A", "B"], seatsPerRow: 7, price: 360 },
+        { name: "Premier", rows: ["C", "D", "E"], seatsPerRow: 9, price: 230 },
+        { name: "Standard", rows: ["F", "G"], seatsPerRow: 10, price: 160 },
+      ],
     },
   ];
 }
 
-function cloneSeats(seats = []) {
-  return seats.map((seat) => ({
-    seatId: seat.seatId,
-    row: seat.row,
-    number: seat.number,
-    section: seat.section,
-    price: seat.price,
+function escapeRegExp(value = "") {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function findSeatSectionConfigs(seats = []) {
+  const sections = new Map();
+
+  for (const seat of seats) {
+    const current =
+      sections.get(seat.section) ||
+      {
+        name: seat.section,
+        price: seat.price,
+        rows: new Map(),
+      };
+
+    const rowSeats = current.rows.get(seat.row) || [];
+    rowSeats.push(seat);
+    current.rows.set(seat.row, rowSeats);
+    sections.set(seat.section, current);
+  }
+
+  return [...sections.values()].map((section) => ({
+    name: section.name,
+    rows: [...section.rows.keys()].sort(),
+    seatsPerRow: Math.max(
+      ...[...section.rows.values()].map((rowSeats) => rowSeats.length),
+    ),
+    price: section.price,
   }));
+}
+
+async function ensureMovieRecord(payload) {
+  const movie =
+    (await Movie.findOne({
+      title: { $regex: `^${escapeRegExp(payload.title)}$`, $options: "i" },
+    })) || new Movie({ title: payload.title });
+
+  movie.genre = payload.genre || movie.genre || "General";
+  movie.duration = payload.duration || movie.duration || 150;
+  movie.rating = payload.rating ?? movie.rating ?? 0;
+  movie.subtitle = payload.subtitle || movie.subtitle || "";
+  movie.description = payload.description || movie.description || "";
+  movie.posterUrl = payload.posterUrl || movie.posterUrl;
+  movie.language = payload.language || movie.language || "";
+  movie.tags = [...new Set([...(movie.tags || []), ...(payload.tags || [])])];
+
+  await movie.save();
+  return movie;
+}
+
+async function ensureTheaterRecord({ name, city }) {
+  const theater =
+    (await Theater.findOne({
+      name,
+      city,
+    })) || new Theater({ name, city });
+
+  theater.name = name;
+  theater.city = city;
+  await theater.save();
+
+  return theater;
+}
+
+async function ensureScreenRecord({ theater, screenName }) {
+  const screen =
+    (await Screen.findOne({
+      theater_id: theater.theater_id,
+      name: screenName,
+    })) ||
+    new Screen({
+      theater_id: theater.theater_id,
+      name: screenName,
+    });
+
+  screen.theater_id = theater.theater_id;
+  screen.name = screenName;
+  await screen.save();
+
+  return screen;
+}
+
+async function ensureSeatsForScreen(screen, seatSections) {
+  const existingSeats = await Seat.countDocuments({ screen_id: screen.screen_id });
+  if (existingSeats > 0) return;
+
+  const expandedSeats = expandSeatLayout(seatSections);
+  if (!expandedSeats.length) return;
+
+  await Seat.insertMany(
+    expandedSeats.map((seat) => ({
+      seat_id: createCatalogId("SET"),
+      screen_id: screen.screen_id,
+      label: seat.seatId,
+      row: seat.row,
+      number: seat.number,
+      section: seat.section,
+      price: seat.price,
+    })),
+  );
+}
+
+async function createShowRecord({
+  movie,
+  screen,
+  date,
+  currency = "INR",
+  featured = false,
+}) {
+  const existingShow = await Show.findOne({
+    movie_id: movie.movie_id,
+    screen_id: screen.screen_id,
+    date,
+  });
+
+  if (existingShow) {
+    existingShow.currency = currency || existingShow.currency;
+    existingShow.featured = featured;
+    await existingShow.save();
+    return existingShow;
+  }
+
+  return Show.create({
+    movie_id: movie.movie_id,
+    screen_id: screen.screen_id,
+    date,
+    currency,
+    featured,
+  });
+}
+
+export async function createMovieShowCatalogEntry({
+  title,
+  genre = "General",
+  duration = 150,
+  rating = 0,
+  subtitle = "",
+  description,
+  venue,
+  city,
+  date,
+  currency = "INR",
+  posterUrl,
+  language = "",
+  featured = false,
+  tags = [],
+  screenName,
+  seatSections = [],
+}) {
+  const movie = await ensureMovieRecord({
+    title,
+    genre,
+    duration,
+    rating,
+    subtitle,
+    description,
+    posterUrl,
+    language,
+    tags,
+  });
+
+  const theater = await ensureTheaterRecord({ name: venue, city });
+  const screen = await ensureScreenRecord({
+    theater,
+    screenName: screenName || `${title} Screen`,
+  });
+  await ensureSeatsForScreen(screen, seatSections);
+
+  if (featured) {
+    await Show.updateMany({ featured: true }, { featured: false });
+  }
+
+  return createShowRecord({
+    movie,
+    screen,
+    date,
+    currency,
+    featured,
+  });
 }
 
 function buildShiftedDate(baseDate, days, hours) {
@@ -128,37 +249,29 @@ function buildShiftedDate(baseDate, days, hours) {
 
 function hasNearbySession(existingShows, candidateDate) {
   return existingShows.some(
-    (show) => Math.abs(new Date(show.date).getTime() - candidateDate.getTime()) < 20 * 60 * 1000
+    (show) =>
+      Math.abs(new Date(show.date).getTime() - candidateDate.getTime()) <
+      20 * 60 * 1000,
   );
 }
 
 function buildMovieSessionVariants(show) {
-  const plainShow = show.toObject ? show.toObject() : show;
   const offsets = [
-    { days: 0, hours: -3, tag: 'Early Show' },
-    { days: 0, hours: 3, tag: 'Late Show' },
-    { days: 1, hours: -2, tag: 'Afternoon' },
-    { days: 1, hours: 2, tag: 'Prime Time' },
-    { days: 2, hours: -1, tag: 'Weekend' },
-    { days: 3, hours: 1, tag: 'Fan Night' },
-    { days: 4, hours: 0, tag: 'Encore' },
+    { days: 0, hours: -3 },
+    { days: 0, hours: 3 },
+    { days: 1, hours: -2 },
+    { days: 1, hours: 2 },
+    { days: 2, hours: -1 },
+    { days: 3, hours: 1 },
+    { days: 4, hours: 0 },
   ];
 
   return offsets.map((offset) => ({
-    type: plainShow.type,
-    title: plainShow.title,
-    subtitle: plainShow.subtitle,
-    description: plainShow.description,
-    venue: plainShow.venue,
-    city: plainShow.city,
-    date: buildShiftedDate(plainShow.date, offset.days, offset.hours),
-    durationMinutes: plainShow.durationMinutes,
-    currency: plainShow.currency,
-    posterUrl: plainShow.posterUrl,
-    language: plainShow.language,
+    movie_id: show.movie_id,
+    screen_id: show.screen_id,
+    date: buildShiftedDate(show.date, offset.days, offset.hours),
+    currency: show.currency,
     featured: false,
-    tags: [...new Set([...(plainShow.tags || []), offset.tag])],
-    seats: cloneSeats(plainShow.seats || []),
   }));
 }
 
@@ -166,12 +279,9 @@ async function ensureMovieShowtimeVariants(existingShows) {
   const movieGroups = new Map();
 
   for (const show of existingShows) {
-    const plainShow = show.toObject ? show.toObject() : show;
-    if (plainShow.type !== 'movie') continue;
-
-    const groupKey = `${plainShow.title}::${plainShow.venue}::${plainShow.city}`;
+    const groupKey = `${show.movie_id}::${show.screen_id}`;
     const list = movieGroups.get(groupKey) || [];
-    list.push(plainShow);
+    list.push(show);
     movieGroups.set(groupKey, list);
   }
 
@@ -195,17 +305,67 @@ async function ensureMovieShowtimeVariants(existingShows) {
   }
 
   if (inserts.length > 0) {
-    await TicketShow.insertMany(inserts);
+    await Show.insertMany(inserts);
+  }
+}
+
+async function migrateLegacyTicketShows() {
+  const legacyShows = await LegacyTicketShow.find({ type: "movie" })
+    .sort({ date: 1 })
+    .lean();
+  if (!legacyShows.length) return;
+
+  const showIdMap = new Map();
+
+  for (const legacyShow of legacyShows) {
+    const migratedShow = await createMovieShowCatalogEntry({
+      title: legacyShow.title,
+      genre: "General",
+      duration: legacyShow.durationMinutes,
+      rating: 0,
+      subtitle: legacyShow.subtitle,
+      description: legacyShow.description,
+      venue: legacyShow.venue,
+      city: legacyShow.city,
+      date: legacyShow.date,
+      currency: legacyShow.currency,
+      posterUrl: legacyShow.posterUrl,
+      language: legacyShow.language,
+      featured: legacyShow.featured,
+      tags: legacyShow.tags || [],
+      screenName: `${legacyShow.title} Screen`,
+      seatSections: findSeatSectionConfigs(legacyShow.seats || []),
+    });
+
+    showIdMap.set(String(legacyShow._id), migratedShow._id);
+  }
+
+  for (const [legacyShowId, migratedShowId] of showIdMap.entries()) {
+    await TicketBooking.updateMany(
+      { show: legacyShowId },
+      { show: migratedShowId },
+    );
+    await TicketSeatReservation.updateMany(
+      { show: legacyShowId },
+      { show: migratedShowId },
+    );
   }
 }
 
 export async function ensureTicketShowsSeeded() {
-  let existingShows = await TicketShow.find().sort({ date: 1 });
+  let existingShowsCount = await Show.countDocuments();
 
-  if (!existingShows.length) {
-    await TicketShow.insertMany(buildTicketSeedData());
-    existingShows = await TicketShow.find().sort({ date: 1 });
+  if (!existingShowsCount) {
+    await migrateLegacyTicketShows();
+    existingShowsCount = await Show.countDocuments();
   }
 
+  if (!existingShowsCount) {
+    for (const entry of buildTicketSeedData()) {
+      await createMovieShowCatalogEntry(entry);
+    }
+  }
+
+  const existingShows = await listHydratedTicketShows();
   await ensureMovieShowtimeVariants(existingShows);
 }

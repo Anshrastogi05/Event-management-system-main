@@ -2,8 +2,16 @@ import mongoose from "mongoose";
 import { connectDB } from "./config/db.js";
 import User from "./models/User.js";
 import Event from "./models/Event.js";
+import Movie from "./models/Movie.js";
 import Registration from "./models/Registration.js";
 import Review from "./models/Review.js";
+import Screen from "./models/Screen.js";
+import Seat from "./models/Seat.js";
+import Show from "./models/Show.js";
+import Theater from "./models/Theater.js";
+import TicketBooking from "./models/TicketBooking.js";
+import TicketSeatReservation from "./models/TicketSeatReservation.js";
+import TicketShow from "./models/TicketShow.js";
 import { generateQRCodeDataUrl } from "./utils/qrcode.js";
 
 async function run() {
@@ -11,8 +19,16 @@ async function run() {
   await Promise.all([
     User.deleteMany({}),
     Event.deleteMany({}),
+    Movie.deleteMany({}),
     Registration.deleteMany({}),
     Review.deleteMany({}),
+    Screen.deleteMany({}),
+    Seat.deleteMany({}),
+    Show.deleteMany({}),
+    Theater.deleteMany({}),
+    TicketBooking.deleteMany({}),
+    TicketSeatReservation.deleteMany({}),
+    TicketShow.deleteMany({}),
   ]);
 
   const customer = await User.create({

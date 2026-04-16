@@ -14,7 +14,7 @@ const bookedSeatSchema = new mongoose.Schema(
 const ticketBookingSchema = new mongoose.Schema(
   {
     user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-    show: { type: mongoose.Schema.Types.ObjectId, ref: 'TicketShow', required: true },
+    show: { type: mongoose.Schema.Types.ObjectId, ref: 'Show', required: true },
     seats: { type: [bookedSeatSchema], default: [] },
     amount: { type: Number, required: true },
     currency: { type: String, default: 'INR' },

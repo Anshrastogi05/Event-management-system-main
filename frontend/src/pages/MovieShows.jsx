@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import axios from "axios";
+import MovieBookingsDialog from "../components/MovieBookingsDialog.jsx";
+import { useAuth } from "../context/AuthContext.jsx";
 
 function formatCurrency(amount, currency = "INR") {
   return new Intl.NumberFormat("en-IN", {
@@ -47,12 +49,17 @@ function isSameCalendarDay(leftDate, rightDate) {
 }
 
 export default function MovieShows() {
+  const { user } = useAuth();
   const [movies, setMovies] = useState([]);
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [selectedDate, setSelectedDate] = useState(() => new Date());
   const [currentTime, setCurrentTime] = useState(() => Date.now());
+  const [bookingDialogOpen, setBookingDialogOpen] = useState(false);
+  const [bookingDialogLoading, setBookingDialogLoading] = useState(false);
+  const [bookingDialogError, setBookingDialogError] = useState("");
+  const [userBookings, setUserBookings] = useState([]);
 
   useEffect(() => {
     loadMovies();
@@ -62,6 +69,56 @@ export default function MovieShows() {
     const timer = window.setInterval(() => setCurrentTime(Date.now()), 60000);
     return () => window.clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    if (!user) {
+      setBookingDialogOpen(false);
+      setBookingDialogLoading(false);
+      setBookingDialogError("");
+      setUserBookings([]);
+    }
+  }, [user]);
+
+  useEffect(() => {
+    if (!bookingDialogOpen || !user) return undefined;
+
+    let mounted = true;
+
+    async function loadUserBookings() {
+      setBookingDialogLoading(true);
+      setBookingDialogError("");
+
+      try {
+        const response = await axios.get("/api/tickets/my-bookings", {
+          params: {
+            status: "held,pending_payment,paid",
+          },
+        });
+
+        if (!mounted) return;
+
+        const bookings = (response.data.bookings || []).filter(
+          (booking) => booking.show?.type === "movie",
+        );
+        setUserBookings(bookings);
+      } catch (loadError) {
+        if (!mounted) return;
+
+        setBookingDialogError(
+          loadError.response?.data?.message ||
+            "Unable to load your movie bookings right now.",
+        );
+      } finally {
+        if (mounted) setBookingDialogLoading(false);
+      }
+    }
+
+    loadUserBookings();
+
+    return () => {
+      mounted = false;
+    };
+  }, [bookingDialogOpen, user]);
 
   async function loadMovies(nextQuery = query, nextDate = selectedDate) {
     setLoading(true);
@@ -208,6 +265,22 @@ export default function MovieShows() {
               >
                 Find shows
               </button>
+              {user ? (
+                <button
+                  type="button"
+                  className="rounded-2xl border border-white/15 bg-white/10 px-5 py-3 text-sm font-semibold text-white transition hover:bg-white/15"
+                  onClick={() => setBookingDialogOpen(true)}
+                >
+                  My movie bookings
+                </button>
+              ) : (
+                <Link
+                  to="/login"
+                  className="rounded-2xl border border-white/15 bg-white/10 px-5 py-3 text-sm font-semibold text-white transition hover:bg-white/15"
+                >
+                  Login to view bookings
+                </Link>
+              )}
             </div>
           </div>
         </div>
@@ -401,6 +474,14 @@ export default function MovieShows() {
           </div>
         )}
       </section>
+
+      <MovieBookingsDialog
+        open={bookingDialogOpen}
+        bookings={userBookings}
+        loading={bookingDialogLoading}
+        error={bookingDialogError}
+        onClose={() => setBookingDialogOpen(false)}
+      />
     </div>
   );
 }

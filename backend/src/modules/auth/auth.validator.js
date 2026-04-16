@@ -80,12 +80,12 @@ export function validateLogin(req, res, next) {
 }
 
 export function validateVerifyOtp(req, res, next) {
-  const pendingAuthToken = normalizeText(req.body?.pendingAuthToken);
+  const email = normalizeText(req.body?.email).toLowerCase();
   const otp = normalizeText(req.body?.otp);
   const errors = [];
 
-  if (!pendingAuthToken) {
-    errors.push("Pending OTP session is required.");
+  if (!validator.isEmail(email || "")) {
+    errors.push("Please provide a valid email address.");
   }
 
   if (!/^\d{6}$/.test(otp)) {
@@ -98,7 +98,7 @@ export function validateVerifyOtp(req, res, next) {
 
   req.body = {
     ...req.body,
-    pendingAuthToken,
+    email,
     otp,
   };
 
@@ -106,15 +106,15 @@ export function validateVerifyOtp(req, res, next) {
 }
 
 export function validateResendOtp(req, res, next) {
-  const pendingAuthToken = normalizeText(req.body?.pendingAuthToken);
+  const email = normalizeText(req.body?.email).toLowerCase();
 
-  if (!pendingAuthToken) {
-    return sendValidationError(res, ["Pending OTP session is required."]);
+  if (!validator.isEmail(email || "")) {
+    return sendValidationError(res, ["Please provide a valid email address."]);
   }
 
   req.body = {
     ...req.body,
-    pendingAuthToken,
+    email,
   };
 
   next();

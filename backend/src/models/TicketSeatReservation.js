@@ -2,7 +2,7 @@ import mongoose from 'mongoose';
 
 const ticketSeatReservationSchema = new mongoose.Schema(
   {
-    show: { type: mongoose.Schema.Types.ObjectId, ref: 'TicketShow', required: true },
+    show: { type: mongoose.Schema.Types.ObjectId, ref: 'Show', required: true },
     booking: { type: mongoose.Schema.Types.ObjectId, ref: 'TicketBooking', required: true },
     user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
     seatId: { type: String, required: true },
