@@ -154,13 +154,20 @@ function getPriceRangeLabel(show) {
   return `${formatCurrency(pricing.min, show.currency)} - ${formatCurrency(pricing.max, show.currency)}`;
 }
 
+function compareRowLabels(left = '', right = '') {
+  return String(left).localeCompare(String(right), 'en', {
+    numeric: true,
+  });
+}
+
 function groupSeatsBySection(seats = []) {
   const sections = new Map();
 
   for (const seat of [...seats].sort((left, right) => {
-    if (left.section !== right.section) return left.section.localeCompare(right.section);
-    if (left.row !== right.row) return left.row.localeCompare(right.row);
-    return left.number - right.number;
+    const rowComparison = compareRowLabels(left.row, right.row);
+    if (rowComparison !== 0) return rowComparison;
+    if (left.number !== right.number) return left.number - right.number;
+    return String(left.section || '').localeCompare(String(right.section || ''));
   })) {
     const section = sections.get(seat.section) || {
       name: seat.section,
@@ -174,14 +181,24 @@ function groupSeatsBySection(seats = []) {
     sections.set(seat.section, section);
   }
 
-  return [...sections.values()].map((section) => ({
-    name: section.name,
-    price: section.price,
-    rows: [...section.rowsMap.entries()].map(([rowLabel, rowSeats]) => ({
-      rowLabel,
-      seats: rowSeats.sort((left, right) => left.number - right.number),
-    })),
-  }));
+  return [...sections.values()]
+    .map((section) => {
+      const rows = [...section.rowsMap.entries()]
+        .sort(([leftRow], [rightRow]) => compareRowLabels(leftRow, rightRow))
+        .map(([rowLabel, rowSeats]) => ({
+          rowLabel,
+          seats: rowSeats.sort((left, right) => left.number - right.number),
+        }));
+
+      return {
+        name: section.name,
+        price: section.price,
+        firstRowLabel: rows[0]?.rowLabel || '',
+        rows,
+      };
+    })
+    .sort((left, right) => compareRowLabels(left.firstRowLabel, right.firstRowLabel))
+    .map(({ firstRowLabel, ...section }) => section);
 }
 
 function buildSeatBreakdown(seats = []) {

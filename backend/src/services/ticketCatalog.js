@@ -8,6 +8,12 @@ import TicketSeatReservation from "../models/TicketSeatReservation.js";
 import LegacyTicketShow from "../models/TicketShow.js";
 import { createCatalogId } from "../utils/catalogIds.js";
 import { expandSeatLayout } from "../utils/ticketSeats.js";
+import {
+  buildMovieSeatColumns,
+  buildScreenSeatSectionsFromMovieLayout,
+  normalizeMovieSeatLayout,
+  summarizeMovieSeatLayoutFromSeats,
+} from "../utils/movieSeatLayout.js";
 import { listHydratedTicketShows } from "./ticketing.js";
 
 function buildTicketSeedData() {
@@ -62,10 +68,21 @@ function escapeRegExp(value = "") {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+function compareRowLabels(left = "", right = "") {
+  return String(left).localeCompare(String(right), "en", {
+    numeric: true,
+  });
+}
+
 function findSeatSectionConfigs(seats = []) {
   const sections = new Map();
 
-  for (const seat of seats) {
+  for (const seat of [...seats].sort((left, right) => {
+    const rowComparison = compareRowLabels(left.row, right.row);
+    if (rowComparison !== 0) return rowComparison;
+    if (left.number !== right.number) return left.number - right.number;
+    return String(left.section || "").localeCompare(String(right.section || ""));
+  })) {
     const current =
       sections.get(seat.section) ||
       {
@@ -104,6 +121,9 @@ async function ensureMovieRecord(payload) {
   movie.posterUrl = payload.posterUrl || movie.posterUrl;
   movie.language = payload.language || movie.language || "";
   movie.tags = [...new Set([...(movie.tags || []), ...(payload.tags || [])])];
+  if (payload.seatLayout?.length) {
+    Object.assign(movie, buildMovieSeatColumns(payload.seatLayout));
+  }
 
   await movie.save();
   return movie;
@@ -206,8 +226,18 @@ export async function createMovieShowCatalogEntry({
   featured = false,
   tags = [],
   screenName,
+  seatLayout = [],
   seatSections = [],
 }) {
+  const normalizedSeatLayout = seatLayout.length
+    ? normalizeMovieSeatLayout(seatLayout)
+    : normalizeMovieSeatLayout(
+        summarizeMovieSeatLayoutFromSeats(expandSeatLayout(seatSections)),
+      );
+  const screenSeatSections = seatSections.length
+    ? seatSections
+    : buildScreenSeatSectionsFromMovieLayout(normalizedSeatLayout);
+
   const movie = await ensureMovieRecord({
     title,
     genre,
@@ -218,6 +248,7 @@ export async function createMovieShowCatalogEntry({
     posterUrl,
     language,
     tags,
+    seatLayout: normalizedSeatLayout,
   });
 
   const theater = await ensureTheaterRecord({ name: venue, city });
@@ -225,7 +256,7 @@ export async function createMovieShowCatalogEntry({
     theater,
     screenName: screenName || `${title} Screen`,
   });
-  await ensureSeatsForScreen(screen, seatSections);
+  await ensureSeatsForScreen(screen, screenSeatSections);
 
   if (featured) {
     await Show.updateMany({ featured: true }, { featured: false });

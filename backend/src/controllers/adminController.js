@@ -15,7 +15,15 @@ import {
   findHydratedTicketShowById,
   listHydratedTicketShows,
 } from "../services/ticketing.js";
-import { buildSeatSectionsFromLayout, expandSeatLayout } from "../utils/ticketSeats.js";
+import { expandSeatLayout } from "../utils/ticketSeats.js";
+import {
+  buildMovieSeatColumns,
+  buildScreenSeatSectionsFromMovieLayout,
+  MOVIE_SEAT_LAYOUT_DEFAULTS,
+  normalizeMovieSeatLayout,
+  normalizeMovieSeatLayoutSignature,
+  summarizeMovieSeatLayoutFromSeats,
+} from "../utils/movieSeatLayout.js";
 import { storeUploadedImage } from "../utils/upload.js";
 import { createCatalogId } from "../utils/catalogIds.js";
 
@@ -88,80 +96,69 @@ function parseTags(value) {
     .filter(Boolean);
 }
 
-function buildSeatSectionsFromRequest(body) {
-  return buildSeatSectionsFromLayout([
-    {
-      name: normalizeText(body.royalName) || "Royal",
-      rows: parsePositiveInteger(body.royalRows, "Royal rows", 2),
-      seatsPerRow: parsePositiveInteger(
-        body.royalSeatsPerRow,
-        "Royal seats per row",
-        7,
-      ),
-      price: parsePositiveInteger(body.royalPrice, "Royal price", 360),
-    },
-    {
-      name: normalizeText(body.premierName) || "Premier",
-      rows: parsePositiveInteger(body.premierRows, "Premier rows", 3),
-      seatsPerRow: parsePositiveInteger(
-        body.premierSeatsPerRow,
-        "Premier seats per row",
-        9,
-      ),
-      price: parsePositiveInteger(body.premierPrice, "Premier price", 230),
-    },
-    {
-      name: normalizeText(body.standardName) || "Standard",
-      rows: parsePositiveInteger(body.standardRows, "Standard rows", 2),
-      seatsPerRow: parsePositiveInteger(
-        body.standardSeatsPerRow,
-        "Standard seats per row",
-        10,
-      ),
-      price: parsePositiveInteger(body.standardPrice, "Standard price", 160),
-    },
-  ]);
-}
-
-function summarizeSeatSections(seats = []) {
-  const sections = new Map();
-
-  for (const seat of seats) {
-    const current =
-      sections.get(seat.section) ||
-      {
-        name: seat.section,
-        price: seat.price,
-        rows: new Map(),
-      };
-
-    const rowSeats = current.rows.get(seat.row) || [];
-    rowSeats.push(seat);
-    current.rows.set(seat.row, rowSeats);
-    sections.set(seat.section, current);
+function getSeatLayoutRequestValue(body, fieldName, legacyFieldName) {
+  const nextValue = body?.[fieldName];
+  if (nextValue !== undefined && nextValue !== null && nextValue !== "") {
+    return nextValue;
   }
 
-  return [...sections.values()].map((section) => ({
-    name: section.name,
-    price: section.price,
-    rows: [...section.rows.keys()].sort(),
-    seatsPerRow: Math.max(
-      ...[...section.rows.values()].map((rowSeats) => rowSeats.length),
-    ),
-  }));
+  return body?.[legacyFieldName];
 }
 
-function normalizeSeatSectionsSignature(sections = []) {
-  return JSON.stringify(
-    [...sections]
-      .map((section) => ({
-        name: section.name,
-        price: Number(section.price),
-        seatsPerRow: Number(section.seatsPerRow),
-        rows: [...section.rows].sort(),
-      }))
-      .sort((left, right) => left.name.localeCompare(right.name)),
+function buildMovieSeatLayoutFromRequest(body) {
+  const nextLayout = normalizeMovieSeatLayout(
+    MOVIE_SEAT_LAYOUT_DEFAULTS.map((sectionDefaults, index) => {
+      const sectionNumber = index + 1;
+      const legacyPrefix = ["royal", "premier", "standard"][index];
+
+      return {
+        name:
+          normalizeText(
+            getSeatLayoutRequestValue(
+              body,
+              `${sectionDefaults.key}Name`,
+              `${legacyPrefix}Name`,
+            ),
+          ) || sectionDefaults.name,
+        rows: parsePositiveInteger(
+          getSeatLayoutRequestValue(
+            body,
+            `${sectionDefaults.key}Rows`,
+            `${legacyPrefix}Rows`,
+          ),
+          `Section ${sectionNumber} rows`,
+          sectionDefaults.rows,
+        ),
+        seatsPerRow: parsePositiveInteger(
+          getSeatLayoutRequestValue(
+            body,
+            `${sectionDefaults.key}SeatsPerRow`,
+            `${legacyPrefix}SeatsPerRow`,
+          ),
+          `Section ${sectionNumber} seats per row`,
+          sectionDefaults.seatsPerRow,
+        ),
+        price: parsePositiveInteger(
+          getSeatLayoutRequestValue(
+            body,
+            `${sectionDefaults.key}Price`,
+            `${legacyPrefix}Price`,
+          ),
+          `Section ${sectionNumber} price`,
+          sectionDefaults.price,
+        ),
+      };
+    }),
   );
+
+  const uniqueNames = new Set(
+    nextLayout.map((section) => section.name.trim().toLowerCase()),
+  );
+  if (uniqueNames.size !== nextLayout.length) {
+    throw createBadRequest("Section names must be unique.");
+  }
+
+  return nextLayout;
 }
 
 async function loadRegistrationUsers() {
@@ -387,7 +384,7 @@ export const createAdminMovieShow = async (req, res) => {
       "Duration",
       150,
     );
-    const seatSections = buildSeatSectionsFromRequest(req.body);
+    const seatLayout = buildMovieSeatLayoutFromRequest(req.body);
 
     const uploadedPoster = req.file
       ? await storeUploadedImage(req.file, { folder: "ticket-shows" })
@@ -410,7 +407,7 @@ export const createAdminMovieShow = async (req, res) => {
       featured,
       tags: parseTags(req.body.tags),
       screenName,
-      seatSections,
+      seatLayout,
     });
     const hydratedShow = await findHydratedTicketShowById(show._id);
 
@@ -463,10 +460,12 @@ export const updateAdminMovieShow = async (req, res) => {
       "Duration",
       sourceShow.durationMinutes || 150,
     );
-    const seatSections = buildSeatSectionsFromRequest(req.body);
-    const nextSeatSignature = normalizeSeatSectionsSignature(seatSections);
-    const currentSeatSignature = normalizeSeatSectionsSignature(
-      summarizeSeatSections(sourceShow.seats || []),
+    const seatLayout = buildMovieSeatLayoutFromRequest(req.body);
+    const nextSeatSignature = normalizeMovieSeatLayoutSignature(seatLayout);
+    const currentSeatSignature = normalizeMovieSeatLayoutSignature(
+      sourceShow.movie?.seatLayout?.length
+        ? sourceShow.movie.seatLayout
+        : summarizeMovieSeatLayoutFromSeats(sourceShow.seats || []),
     );
 
     const uploadedPoster = req.file
@@ -486,6 +485,7 @@ export const updateAdminMovieShow = async (req, res) => {
         rating,
         language,
         tags,
+        ...buildMovieSeatColumns(seatLayout),
         ...(uploadedPoster?.url ? { posterUrl: uploadedPoster.url } : {}),
       },
     );
@@ -501,6 +501,8 @@ export const updateAdminMovieShow = async (req, res) => {
     );
 
     if (nextSeatSignature !== currentSeatSignature) {
+      const screenSeatSections =
+        buildScreenSeatSectionsFromMovieLayout(seatLayout);
       const siblingShows = await Show.find({ screen_id: sourceShow.screen_id })
         .select("_id")
         .lean();
@@ -517,7 +519,7 @@ export const updateAdminMovieShow = async (req, res) => {
 
       await Seat.deleteMany({ screen_id: sourceShow.screen_id });
       await Seat.insertMany(
-        expandSeatLayout(seatSections).map((seat) => ({
+        expandSeatLayout(screenSeatSections).map((seat) => ({
           seat_id: createCatalogId("SET"),
           screen_id: sourceShow.screen_id,
           label: seat.seatId,

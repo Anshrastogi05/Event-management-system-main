@@ -1,6 +1,19 @@
 import mongoose from "mongoose";
 import { createCatalogId } from "../utils/catalogIds.js";
 
+const movieSeatSectionSchema = new mongoose.Schema(
+  {
+    key: { type: String, required: true, trim: true },
+    order: { type: Number, required: true, min: 1, max: 3 },
+    name: { type: String, required: true, trim: true },
+    rows: { type: Number, required: true, min: 1 },
+    seatsPerRow: { type: Number, required: true, min: 1 },
+    totalSeats: { type: Number, required: true, min: 1 },
+    price: { type: Number, required: true, min: 1 },
+  },
+  { _id: false },
+);
+
 const movieSchema = new mongoose.Schema(
   {
     movie_id: {
@@ -18,6 +31,10 @@ const movieSchema = new mongoose.Schema(
     posterUrl: { type: String },
     language: { type: String, trim: true },
     tags: [{ type: String }],
+    seatLayout: { type: [movieSeatSectionSchema], default: [] },
+    section1Seats: { type: Number, default: 0, min: 0 },
+    section2Seats: { type: Number, default: 0, min: 0 },
+    section3Seats: { type: Number, default: 0, min: 0 },
   },
   { timestamps: true },
 );

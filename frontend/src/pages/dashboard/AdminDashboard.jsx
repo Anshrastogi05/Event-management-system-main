@@ -9,27 +9,27 @@ import DashboardUserModal from '../../components/dashboard/DashboardUserModal.js
 const seatSectionFields = [
   {
     title: 'Section 1',
-    nameField: 'royalName',
-    rowsField: 'royalRows',
-    seatsField: 'royalSeatsPerRow',
-    priceField: 'royalPrice',
-    defaultName: 'Royal',
+    nameField: 'section1Name',
+    rowsField: 'section1Rows',
+    seatsField: 'section1SeatsPerRow',
+    priceField: 'section1Price',
+    defaultName: 'Section 1',
   },
   {
     title: 'Section 2',
-    nameField: 'premierName',
-    rowsField: 'premierRows',
-    seatsField: 'premierSeatsPerRow',
-    priceField: 'premierPrice',
-    defaultName: 'Premier',
+    nameField: 'section2Name',
+    rowsField: 'section2Rows',
+    seatsField: 'section2SeatsPerRow',
+    priceField: 'section2Price',
+    defaultName: 'Section 2',
   },
   {
     title: 'Section 3',
-    nameField: 'standardName',
-    rowsField: 'standardRows',
-    seatsField: 'standardSeatsPerRow',
-    priceField: 'standardPrice',
-    defaultName: 'Standard',
+    nameField: 'section3Name',
+    rowsField: 'section3Rows',
+    seatsField: 'section3SeatsPerRow',
+    priceField: 'section3Price',
+    defaultName: 'Section 3',
   },
 ];
 
@@ -48,18 +48,18 @@ const defaultMovieForm = {
   language: 'Hindi',
   tags: '',
   featured: false,
-  royalName: 'Royal',
-  royalRows: '2',
-  royalSeatsPerRow: '7',
-  royalPrice: '360',
-  premierName: 'Premier',
-  premierRows: '3',
-  premierSeatsPerRow: '9',
-  premierPrice: '230',
-  standardName: 'Standard',
-  standardRows: '2',
-  standardSeatsPerRow: '10',
-  standardPrice: '160',
+  section1Name: 'Section 1',
+  section1Rows: '2',
+  section1SeatsPerRow: '7',
+  section1Price: '360',
+  section2Name: 'Section 2',
+  section2Rows: '3',
+  section2SeatsPerRow: '9',
+  section2Price: '230',
+  section3Name: 'Section 3',
+  section3Rows: '2',
+  section3SeatsPerRow: '10',
+  section3Price: '160',
 };
 
 function formatCurrency(amount, currency = 'INR') {
@@ -122,7 +122,10 @@ function summarizeSeatSections(seats = []) {
 }
 
 function buildMovieFormFromMovie(movie) {
-  const sections = summarizeSeatSections(movie?.seats || []);
+  const sections =
+    Array.isArray(movie?.seatLayout) && movie.seatLayout.length > 0
+      ? movie.seatLayout
+      : summarizeSeatSections(movie?.seats || []);
   const [first = {}, second = {}, third = {}] = sections;
 
   return {
@@ -140,18 +143,24 @@ function buildMovieFormFromMovie(movie) {
     language: movie?.language || '',
     tags: Array.isArray(movie?.tags) ? movie.tags.join(', ') : '',
     featured: Boolean(movie?.featured),
-    royalName: first.name || defaultMovieForm.royalName,
-    royalRows: String(first.rows || defaultMovieForm.royalRows),
-    royalSeatsPerRow: String(first.seatsPerRow || defaultMovieForm.royalSeatsPerRow),
-    royalPrice: String(first.price || defaultMovieForm.royalPrice),
-    premierName: second.name || defaultMovieForm.premierName,
-    premierRows: String(second.rows || defaultMovieForm.premierRows),
-    premierSeatsPerRow: String(second.seatsPerRow || defaultMovieForm.premierSeatsPerRow),
-    premierPrice: String(second.price || defaultMovieForm.premierPrice),
-    standardName: third.name || defaultMovieForm.standardName,
-    standardRows: String(third.rows || defaultMovieForm.standardRows),
-    standardSeatsPerRow: String(third.seatsPerRow || defaultMovieForm.standardSeatsPerRow),
-    standardPrice: String(third.price || defaultMovieForm.standardPrice),
+    section1Name: first.name || defaultMovieForm.section1Name,
+    section1Rows: String(first.rows || defaultMovieForm.section1Rows),
+    section1SeatsPerRow: String(
+      first.seatsPerRow || defaultMovieForm.section1SeatsPerRow,
+    ),
+    section1Price: String(first.price || defaultMovieForm.section1Price),
+    section2Name: second.name || defaultMovieForm.section2Name,
+    section2Rows: String(second.rows || defaultMovieForm.section2Rows),
+    section2SeatsPerRow: String(
+      second.seatsPerRow || defaultMovieForm.section2SeatsPerRow,
+    ),
+    section2Price: String(second.price || defaultMovieForm.section2Price),
+    section3Name: third.name || defaultMovieForm.section3Name,
+    section3Rows: String(third.rows || defaultMovieForm.section3Rows),
+    section3SeatsPerRow: String(
+      third.seatsPerRow || defaultMovieForm.section3SeatsPerRow,
+    ),
+    section3Price: String(third.price || defaultMovieForm.section3Price),
   };
 }
 
