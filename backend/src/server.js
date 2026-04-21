@@ -27,6 +27,92 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const server = http.createServer(app);
 
+function normalizeClientIp(value = '') {
+  const trimmedValue = String(value || '').trim();
+  if (!trimmedValue) return '';
+
+  const firstEntry = trimmedValue.split(',')[0].trim();
+  if (firstEntry.startsWith('::ffff:')) return firstEntry.slice(7);
+  return firstEntry;
+}
+
+function isPrivateIp(ip = '') {
+  const normalizedIp = normalizeClientIp(ip).toLowerCase();
+  if (!normalizedIp) return true;
+
+  if (
+    normalizedIp === '127.0.0.1' ||
+    normalizedIp === '::1' ||
+    normalizedIp === 'localhost'
+  ) {
+    return true;
+  }
+
+  if (
+    normalizedIp.startsWith('10.') ||
+    normalizedIp.startsWith('192.168.') ||
+    normalizedIp.startsWith('fc') ||
+    normalizedIp.startsWith('fd') ||
+    normalizedIp.startsWith('fe80:')
+  ) {
+    return true;
+  }
+
+  const privateRangeMatch = normalizedIp.match(/^172\.(\d{1,3})\./);
+  if (!privateRangeMatch) return false;
+
+  const secondOctet = Number(privateRangeMatch[1]);
+  return secondOctet >= 16 && secondOctet <= 31;
+}
+
+async function lookupIpLocation(req, res) {
+  try {
+    const forwardedIp = normalizeClientIp(req.headers['x-forwarded-for']);
+    const requestIp =
+      forwardedIp ||
+      normalizeClientIp(req.ip) ||
+      normalizeClientIp(req.socket?.remoteAddress);
+    const lookupEndpoint =
+      requestIp && !isPrivateIp(requestIp)
+        ? `http://ip-api.com/json/${encodeURIComponent(
+            requestIp,
+          )}?fields=status,message,city,region,regionName,country,query`
+        : 'http://ip-api.com/json/?fields=status,message,city,region,regionName,country,query';
+
+    const response = await fetch(lookupEndpoint, {
+      headers: {
+        Accept: 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      return res.status(502).json({
+        message: 'Unable to fetch your current city right now.',
+      });
+    }
+
+    const data = await response.json();
+    if (data.status !== 'success') {
+      return res.status(502).json({
+        message: data.message || 'Unable to detect your current city.',
+      });
+    }
+
+    res.set('Cache-Control', 'no-store');
+    res.json({
+      city: data.city || '',
+      region: data.regionName || data.region || '',
+      country: data.country || '',
+      ip: data.query || requestIp || '',
+      source: 'ip-api',
+    });
+  } catch (error) {
+    res.status(500).json({
+      message: error.message || 'Unable to detect your current city.',
+    });
+  }
+}
+
 // Security & utils
 app.use(helmet());
 app.use(
@@ -55,6 +141,7 @@ app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
 
 // API Routes (mounted later when implemented)
 app.get('/api/health', (req, res) => res.json({ status: 'ok' }));
+app.get('/api/location/current', lookupIpLocation);
 app.use('/api/auth', authRoutes);
 app.use('/api/events', eventRoutes);
 app.use('/api/registrations', registrationRoutes);
