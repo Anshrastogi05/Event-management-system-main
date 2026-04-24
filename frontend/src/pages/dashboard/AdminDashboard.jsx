@@ -240,9 +240,16 @@ export default function AdminDashboard() {
 
   async function approveEvent(eventId) {
     try {
-      await axios.post(`/api/admin/events/${eventId}/approve`, null, getAdminRequestConfig());
+      const response = await axios.post(
+        `/api/admin/events/${eventId}/approve`,
+        null,
+        getAdminRequestConfig(),
+      );
       await loadDashboard();
-      showToast('success', 'Event approved successfully.');
+      showToast(
+        'success',
+        response.data?.message || 'Event approved successfully.',
+      );
     } catch (error) {
       showToast('error', error.response?.data?.message || 'Unable to approve this event.');
     }
@@ -250,9 +257,16 @@ export default function AdminDashboard() {
 
   async function rejectEvent(eventId) {
     try {
-      await axios.post(`/api/admin/events/${eventId}/reject`, null, getAdminRequestConfig());
+      const response = await axios.post(
+        `/api/admin/events/${eventId}/reject`,
+        null,
+        getAdminRequestConfig(),
+      );
       await loadDashboard();
-      showToast('success', 'Event rejected successfully.');
+      showToast(
+        'success',
+        response.data?.message || 'Event rejected successfully.',
+      );
     } catch (error) {
       showToast('error', error.response?.data?.message || 'Unable to reject this event.');
     }
@@ -992,16 +1006,44 @@ export default function AdminDashboard() {
         ) : (
           <ul className="space-y-3">
             {pendingEvents.map((event) => (
-              <li key={event._id} className="grid gap-4 rounded-2xl border border-slate-200 p-4 dark:border-slate-800 lg:grid-cols-[1fr_auto] lg:items-center">
-                <div className="space-y-1">
-                  <div className="text-lg font-semibold">{event.title}</div>
-                  <div className="text-sm text-slate-500 dark:text-slate-400">
-                    Organizer: {event.organizer?.name || 'Unknown'}
+              <li
+                key={event._id}
+                className="grid gap-4 rounded-2xl border border-slate-200 p-4 dark:border-slate-800 lg:grid-cols-[160px_1fr_auto] lg:items-center"
+              >
+                <img
+                  src={event.posterUrl || '/placeholder.svg'}
+                  alt={event.title}
+                  className="h-32 w-full rounded-2xl object-cover"
+                />
+
+                <div className="space-y-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <div className="text-lg font-semibold">{event.title}</div>
+                    <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-amber-700 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-300">
+                      Pending Review
+                    </span>
                   </div>
-                  <div className="text-sm text-slate-500 dark:text-slate-400">
-                    {new Date(event.date).toLocaleDateString()} | {event.location}
+
+                  <div className="grid gap-2 text-sm text-slate-500 dark:text-slate-400 md:grid-cols-2">
+                    <div>Organizer: {event.organizer?.name || 'Unknown'}</div>
+                    <div>Email: {event.organizer?.email || 'No email'}</div>
+                    <div>Category: {event.category || 'Uncategorized'}</div>
+                    <div>
+                      Submitted: {new Date(event.createdAt).toLocaleString()}
+                    </div>
+                    <div>{new Date(event.date).toLocaleString()}</div>
+                    <div>{event.location}</div>
+                    <div>
+                      Permanent booking:{' '}
+                      {Number(event.permanentBookingPrice || 0) > 0
+                        ? formatCurrency(event.permanentBookingPrice, event.currency || 'INR')
+                        : 'Disabled'}
+                    </div>
                   </div>
-                  <p className="text-sm text-slate-600 dark:text-slate-300">{event.description}</p>
+
+                  <p className="text-sm text-slate-600 dark:text-slate-300">
+                    {event.description}
+                  </p>
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2">

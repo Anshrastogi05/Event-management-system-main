@@ -80,6 +80,8 @@ export default function BookingPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const [event, setEvent] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [pageError, setPageError] = useState("");
   const [selectedOption, setSelectedOption] = useState("permanent");
   const [submitting, setSubmitting] = useState(false);
   const [toast, setToast] = useState({
@@ -102,10 +104,13 @@ export default function BookingPage() {
       return;
     }
 
-    loadEvent();
+    void loadEvent();
   }, [id, user]);
 
   async function loadEvent() {
+    setLoading(true);
+    setPageError("");
+
     try {
       const response = await axios.get(`/api/events/${id}`);
       const nextEvent = response.data.event;
@@ -114,15 +119,19 @@ export default function BookingPage() {
       const paidEnabled = Number(nextEvent?.permanentBookingPrice || 0) > 0;
       setSelectedOption(paidEnabled ? "permanent" : "free");
     } catch (error) {
-      showToast(
-        "error",
-        error.response?.data?.message || "Unable to load booking details.",
-      );
+      const message =
+        error.response?.data?.message || "Unable to load booking details.";
+      setEvent(null);
+      setPageError(message);
+      showToast("error", message);
+    } finally {
+      setLoading(false);
     }
   }
 
   const permanentBookingPrice = Number(event?.permanentBookingPrice || 0);
   const isPermanentBookingAvailable = permanentBookingPrice > 0;
+  const isEventApproved = event?.status === "approved";
   const bookingOptions = useMemo(
     () => [
       {
@@ -186,6 +195,13 @@ export default function BookingPage() {
 
   async function confirmBooking() {
     if (!event) return;
+    if (!isEventApproved) {
+      showToast(
+        "info",
+        "This event is waiting for admin approval, so bookings are not open yet.",
+      );
+      return;
+    }
 
     if (selectedOption === "permanent" && !isPermanentBookingAvailable) {
       showToast(
@@ -234,10 +250,29 @@ export default function BookingPage() {
     }
   }
 
-  if (!event) {
+  if (loading) {
     return (
       <div className="py-10 text-center text-sm text-slate-500 dark:text-slate-400">
         Loading booking page...
+      </div>
+    );
+  }
+
+  if (pageError || !event) {
+    return (
+      <div className="space-y-4 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+        <h1 className="text-2xl font-bold">Booking unavailable</h1>
+        <p className="text-sm text-slate-600 dark:text-slate-300">
+          {pageError || "This booking page is not available right now."}
+        </p>
+        <div className="flex flex-wrap gap-3">
+          <button className="btn" onClick={() => navigate("/")}>
+            Back to Home
+          </button>
+          <button className="btn-outline" onClick={() => navigate("/dashboard")}>
+            Open Dashboard
+          </button>
+        </div>
       </div>
     );
   }
@@ -271,6 +306,11 @@ export default function BookingPage() {
               Free registration stays instant. Permanent booking now uses
               Razorpay for secure payment before the pass is issued.
             </p>
+            {!isEventApproved ? (
+              <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
+                This event is still waiting for admin approval. Customers can book only after approval.
+              </div>
+            ) : null}
           </div>
 
           <div className="grid gap-4 md:grid-cols-2">
@@ -283,9 +323,9 @@ export default function BookingPage() {
                   onClick={() =>
                     !option.disabled && setSelectedOption(option.id)
                   }
-                  disabled={option.disabled || submitting}
+                  disabled={option.disabled || submitting || !isEventApproved}
                   className={`rounded-3xl border p-5 text-left transition ${
-                    option.disabled
+                    option.disabled || !isEventApproved
                       ? "cursor-not-allowed border-slate-200 bg-slate-50 opacity-60 dark:border-slate-800 dark:bg-slate-950"
                       : isSelected
                         ? "border-blue-500 bg-blue-50 shadow-sm dark:border-blue-400 dark:bg-blue-950/30"
@@ -333,9 +373,11 @@ export default function BookingPage() {
               <button
                 className="btn"
                 onClick={confirmBooking}
-                disabled={submitting}
+                disabled={submitting || !isEventApproved}
               >
-                {submitting
+                {!isEventApproved
+                  ? "Waiting for Approval"
+                  : submitting
                   ? selectedOption === "permanent"
                     ? "Opening payment..."
                     : "Processing..."
@@ -396,8 +438,9 @@ export default function BookingPage() {
           </div>
 
           <div className="mt-6 rounded-2xl bg-slate-950 px-4 py-4 text-sm text-slate-100 dark:bg-slate-800">
-            Free registration sends confirmation immediately. Permanent booking
-            generates the pass only after payment verification.
+            {isEventApproved
+              ? "Free registration sends confirmation immediately. Permanent booking generates the pass only after payment verification."
+              : "This event is in the admin approval queue. Booking buttons will unlock after approval."}
           </div>
         </div>
       </div>

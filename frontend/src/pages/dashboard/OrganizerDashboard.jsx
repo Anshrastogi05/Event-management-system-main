@@ -24,6 +24,34 @@ function formatEventMeta(event) {
   return `${new Date(event.date).toLocaleDateString()} | ${event.location}`;
 }
 
+function getEventStatusConfig(status) {
+  if (status === "approved") {
+    return {
+      label: "Live",
+      classes:
+        "border border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-300",
+      description: "Visible on the customer home page and open for booking.",
+    };
+  }
+
+  if (status === "rejected") {
+    return {
+      label: "Declined",
+      classes:
+        "border border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-300",
+      description:
+        "Hidden from customers. Update it and submit again when it is ready.",
+    };
+  }
+
+  return {
+    label: "Waiting Review",
+    classes:
+      "border border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-300",
+    description: "Sent to admin and hidden from customers until approval.",
+  };
+}
+
 function OrganizerAnalyticsStat({ label, value, hint }) {
   return (
     <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 dark:border-slate-800 dark:bg-slate-900">
@@ -138,7 +166,7 @@ export default function OrganizerDashboard() {
       formData.append("currency", "INR");
       if (poster) formData.append("poster", poster);
 
-      await axios.post("/api/events", formData, getRequestConfig());
+      const response = await axios.post("/api/events", formData, getRequestConfig());
       setTitle("");
       setDate("");
       setLocation("");
@@ -147,7 +175,11 @@ export default function OrganizerDashboard() {
       setPermanentBookingPrice("0");
       setPoster(null);
       await loadDashboardData();
-      showToast("success", "Event created successfully.");
+      showToast(
+        "success",
+        response.data?.message ||
+          "Event submitted for admin approval successfully.",
+      );
     } catch (error) {
       showToast(
         "error",
@@ -200,6 +232,9 @@ export default function OrganizerDashboard() {
       (event) => event.status === "approved",
     ).length;
     const pending = events.filter((event) => event.status === "pending").length;
+    const rejected = events.filter(
+      (event) => event.status === "rejected",
+    ).length;
     const categories = new Set(
       events.map((event) => event.category).filter(Boolean),
     );
@@ -208,6 +243,7 @@ export default function OrganizerDashboard() {
       total: events.length,
       approved,
       pending,
+      rejected,
       categories: categories.size,
       participants: analyticsSummary.participants || 0,
       byCategory: events.reduce((accumulator, event) => {
@@ -375,7 +411,7 @@ export default function OrganizerDashboard() {
 
       <DashboardHeader
         title="Manage your events"
-        subtitle="Create new events, track status updates, and review participant analytics for every event you run."
+        subtitle="Submit new events for admin approval, track review status, and watch participant analytics once events go live."
         user={user}
         onLogout={logout}
         profilePanel={profilePanel}
@@ -392,7 +428,7 @@ export default function OrganizerDashboard() {
         }
       />
 
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-6">
         <DashboardStatCard
           label="Total Events"
           value={stats.total}
@@ -404,9 +440,14 @@ export default function OrganizerDashboard() {
           hint="Ready for attendees"
         />
         <DashboardStatCard
-          label="Pending"
+          label="Pending Review"
           value={stats.pending}
           hint="Waiting for admin review"
+        />
+        <DashboardStatCard
+          label="Declined"
+          value={stats.rejected}
+          hint="Still hidden from customers"
         />
         <DashboardStatCard
           label="Categories"
@@ -477,7 +518,7 @@ export default function OrganizerDashboard() {
                     </div>
                     <div className="text-sm text-slate-500 dark:text-slate-400">
                       Category: {item.event?.category} | Status:{" "}
-                      {item.event?.status}
+                      {getEventStatusConfig(item.event?.status).label}
                     </div>
                   </div>
 
@@ -604,9 +645,10 @@ export default function OrganizerDashboard() {
           className="space-y-4 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900"
         >
           <div>
-            <h2 className="text-xl font-bold">Create Event</h2>
+            <h2 className="text-xl font-bold">Submit Event for Approval</h2>
             <p className="text-sm text-slate-500 dark:text-slate-400">
-              Publish a new experience for your audience.
+              Clicking submit sends your event to the admin review queue. It
+              stays hidden from customers until approval.
             </p>
           </div>
 
@@ -709,7 +751,7 @@ export default function OrganizerDashboard() {
           </div>
 
           <div className="flex justify-end">
-            <button className="btn">Publish Event</button>
+            <button className="btn">Send for Approval</button>
           </div>
         </form>
 
@@ -747,8 +789,8 @@ export default function OrganizerDashboard() {
             <div className="mb-4">
               <h2 className="text-xl font-bold">My Events</h2>
               <p className="text-sm text-slate-500 dark:text-slate-400">
-                Review event status and jump straight into participant
-                analytics.
+                Review approval status, customer visibility, and participant
+                analytics in one place.
               </p>
             </div>
 
@@ -760,6 +802,7 @@ export default function OrganizerDashboard() {
               <ul className="space-y-3">
                 {events.map((event) => {
                   const eventAnalytics = analyticsByEventId.get(event._id);
+                  const statusConfig = getEventStatusConfig(event.status);
 
                   return (
                     <li
@@ -767,11 +810,18 @@ export default function OrganizerDashboard() {
                       className="grid gap-3 rounded-2xl border border-slate-200 p-4 dark:border-slate-800 lg:grid-cols-[1fr_auto] lg:items-center"
                     >
                       <div>
-                        <div className="text-lg font-semibold">
-                          {event.title}
+                        <div className="flex flex-wrap items-center gap-2">
+                          <div className="text-lg font-semibold">
+                            {event.title}
+                          </div>
+                          <span
+                            className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] ${statusConfig.classes}`}
+                          >
+                            {statusConfig.label}
+                          </span>
                         </div>
                         <div className="text-sm text-slate-500 dark:text-slate-400">
-                          Status: {event.status}
+                          {statusConfig.description}
                         </div>
                         <div className="text-sm text-slate-500 dark:text-slate-400">
                           {formatEventMeta(event)}

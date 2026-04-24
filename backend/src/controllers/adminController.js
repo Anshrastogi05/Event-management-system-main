@@ -563,7 +563,10 @@ export const approveEvent = async (req, res) => {
       { new: true },
     );
     if (!event) return res.status(404).json({ message: "Not found" });
-    res.json({ event });
+    res.json({
+      event,
+      message: "Event approved successfully. It is now visible to customers.",
+    });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -577,7 +580,10 @@ export const rejectEvent = async (req, res) => {
       { new: true },
     );
     if (!event) return res.status(404).json({ message: "Not found" });
-    res.json({ event });
+    res.json({
+      event,
+      message: "Event request declined. It stays hidden from customers.",
+    });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
