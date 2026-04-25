@@ -13,7 +13,10 @@ const localBackendOrigin = 'http://localhost:5050';
 
 export const API_BASE_URL = configuredApiUrl || '';
 
-export const SOCKET_URL =
-  configuredSocketUrl ||
-  configuredApiUrl ||
-  (import.meta.env.DEV ? localBackendOrigin : window.location.origin);
+export const SOCKET_URL = configuredSocketUrl || configuredApiUrl || (import.meta.env.DEV ? localBackendOrigin : '');
+
+if (!import.meta.env.DEV && (!configuredApiUrl || !SOCKET_URL)) {
+  console.warn(
+    'Missing VITE_API_URL or VITE_SOCKET_URL. Set them to your deployed backend origin in production.',
+  );
+}

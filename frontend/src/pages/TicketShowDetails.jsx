@@ -396,6 +396,8 @@ export default function TicketShowDetails() {
   }, [activeBooking]);
 
   useEffect(() => {
+    if (!SOCKET_URL) return undefined;
+
     const socket = io(SOCKET_URL, { withCredentials: true });
 
     socket.emit('tickets:join-show', id);
