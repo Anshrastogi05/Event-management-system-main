@@ -1,5 +1,5 @@
 import { Server } from 'socket.io';
-import { env } from '../config/env.js';
+import { isAllowedClientOrigin } from '../config/env.js';
 
 let ioInstance = null;
 
@@ -10,7 +10,13 @@ function ticketRoom(showId) {
 export function initSocket(server) {
   ioInstance = new Server(server, {
     cors: {
-      origin: env.clientUrls,
+      origin(origin, callback) {
+        if (isAllowedClientOrigin(origin)) {
+          return callback(null, true);
+        }
+
+        return callback(new Error(`Origin ${origin} is not allowed by CORS`));
+      },
       methods: ['GET', 'POST'],
       credentials: true,
     },
