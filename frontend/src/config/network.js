@@ -7,16 +7,18 @@ function normalizeBackendOrigin(value = '') {
   return trimmedValue.replace(/\/api$/i, '');
 }
 
+const productionBackendOrigin = 'https://event-management-system-main-9t8t.onrender.com';
 const configuredApiUrl = normalizeBackendOrigin(import.meta.env.VITE_API_URL || '');
 const configuredSocketUrl = trimTrailingSlash((import.meta.env.VITE_SOCKET_URL || '').trim());
 const localBackendOrigin = 'http://localhost:5050';
+const fallbackBackendOrigin = import.meta.env.DEV ? localBackendOrigin : productionBackendOrigin;
 
-export const API_BASE_URL = configuredApiUrl || '';
+export const API_BASE_URL = configuredApiUrl || fallbackBackendOrigin;
 
-export const SOCKET_URL = configuredSocketUrl || configuredApiUrl || (import.meta.env.DEV ? localBackendOrigin : '');
+export const SOCKET_URL = configuredSocketUrl || configuredApiUrl || fallbackBackendOrigin;
 
 if (!import.meta.env.DEV && (!configuredApiUrl || !SOCKET_URL)) {
   console.warn(
-    'Missing VITE_API_URL or VITE_SOCKET_URL. Set them to your deployed backend origin in production.',
+    `Missing VITE_API_URL or VITE_SOCKET_URL. Falling back to ${productionBackendOrigin}.`,
   );
 }
