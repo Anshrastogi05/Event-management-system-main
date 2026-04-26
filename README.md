@@ -127,12 +127,20 @@ npm install
 
 🔐 Environment Configuration
 
-Create backend/.env:
+Create `backend/.env`:
 
 PORT=5050
-MONGODB_URI=mongodb://localhost:27017/eventmanager
+MONGO_URI=mongodb://localhost:27017/eventmanager
 JWT_SECRET=supersecret
-CLIENT_ORIGIN=http://localhost:5173
+CLIENT_URL=http://localhost:5173
+
+For multiple allowed frontend origins, use:
+
+CLIENT_URLS=http://localhost:5173,https://your-frontend.vercel.app
+
+Wildcard origins are also supported for preview deployments, for example:
+
+CLIENT_URLS=http://localhost:5173,https://*.vercel.app
 
 ▶️ Running Locally
 Backend
@@ -176,7 +184,7 @@ Serve frontend dist/ via CDN or static hosting
 
 Run backend using PM2 or Docker
 
-Enable CORS for frontend origin
+Set `CLIENT_URL` or `CLIENT_URLS` on the backend host so the deployed frontend origin is allowed by CORS
 
 Ensure Socket.IO support in production
 

@@ -6,6 +6,10 @@ function normalizeUrl(value = "") {
   return value.trim().replace(/\/+$/, "");
 }
 
+function escapeRegex(value = "") {
+  return value.replace(/[|\\{}()[\]^$+?.]/g, "\\$&");
+}
+
 function parseClientUrls(...values) {
   const uniqueUrls = new Set();
 
@@ -21,14 +25,27 @@ function parseClientUrls(...values) {
   return [...uniqueUrls];
 }
 
+function compileOriginPatterns(urls = []) {
+  return urls
+    .filter((url) => url.includes("*"))
+    .map((url) => {
+      const regexPattern = `^${escapeRegex(url).replace(/\*/g, ".*")}$`;
+      return new RegExp(regexPattern);
+    });
+}
+
 const defaultClientUrls = ["http://localhost:5173"];
 const clientUrls = parseClientUrls(process.env.CLIENT_URLS, process.env.CLIENT_URL);
 const allowedClientUrls = clientUrls.length ? clientUrls : defaultClientUrls;
+const allowedClientOriginPatterns = compileOriginPatterns(allowedClientUrls);
 const primaryClientUrl =
   normalizeUrl(process.env.CLIENT_URL) ||
   allowedClientUrls.find(
-    (url) => !["localhost", "127.0.0.1"].some((host) => url.includes(host)),
+    (url) =>
+      !url.includes("*") &&
+      !["localhost", "127.0.0.1"].some((host) => url.includes(host)),
   ) ||
+  allowedClientUrls.find((url) => !url.includes("*")) ||
   allowedClientUrls[0];
 
 if (!process.env.JWT_SECRET) {
@@ -81,7 +98,13 @@ export const env = {
 
 export function isAllowedClientOrigin(origin) {
   const normalizedOrigin = normalizeUrl(origin || "");
-  return !normalizedOrigin || env.clientUrls.includes(normalizedOrigin);
+  return (
+    !normalizedOrigin ||
+    env.clientUrls.includes(normalizedOrigin) ||
+    allowedClientOriginPatterns.some((pattern) =>
+      pattern.test(normalizedOrigin),
+    )
+  );
 }
 
 export default env;
