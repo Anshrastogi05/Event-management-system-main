@@ -1,33 +1,46 @@
-🎟️ EventManager
+🎟️ Event Management System 
+Real-Time Event Booking Platform
 
-Full-Stack Event Management System
+<p align="center"> <img src="https://img.shields.io/badge/Node.js-18%2B-green" /> <img src="https://img.shields.io/badge/React-Vite-blue" /> <img src="https://img.shields.io/badge/MongoDB-Mongoose-brightgreen" /> <img src="https://img.shields.io/badge/Auth-JWT-orange" /> <img src="https://img.shields.io/badge/Realtime-Socket.IO-black" /> <img src="https://img.shields.io/badge/Styling-TailwindCSS-06B6D4" /> <img src="https://img.shields.io/badge/License-MIT-purple" />
+<p align="center"> <b>A production-ready full-stack platform for real-time event creation, booking, and ticket management.</b><br/> Built with scalability, security, and seamless user experience in mind. </p>
 
-<p align="center"> <img src="https://img.shields.io/badge/Node.js-18%2B-green" /> <img src="https://img.shields.io/badge/React-Vite-blue" /> <img src="https://img.shields.io/badge/MongoDB-Mongoose-brightgreen" /> <img src="https://img.shields.io/badge/Auth-JWT-orange" /> <img src="https://img.shields.io/badge/Realtime-Socket.IO-black" /> <img src="https://img.shields.io/badge/Styling-TailwindCSS-06B6D4" /> <img src="https://img.shields.io/badge/License-MIT-purple" /> </p>
+📌 Table of Contents
+✨ Overview
+🔥 Features
+🧠 Architecture
+⚙️ Tech Stack
+📂 Project Structure
+🚀 Getting Started
+🔐 Security
+📈 Future Scope
+🤝 Contributing
+
 🚀 Overview
 
-EventManager is a production-ready full-stack web application that enables users to discover and register for events, receive QR-coded PDF tickets, and post reviews. Organizers can manage events, track registrations in real time, export participant data, and perform live check-ins. Administrators moderate events to ensure quality and authenticity.
+The Event Management System is a scalable full-stack application that enables:
 
+🎯 Real-time event creation & updates
+🎟️ Seamless event booking & registration
+💳 Secure online payments
+📲 Instant ticket generation with QR codes
+
+This project is designed to simulate a production-grade event platform, focusing on performance, security, and real-time interactivity.
 The system emphasizes scalability, real-time updates, and clean architecture.
 
 ✨ Features
-👥 Customers
+👤 User Features
+Browse and explore events
+Register for events in real-time
+Secure online payments
+Get QR-based tickets
+Download PDF tickets
 
-Discover and browse events
-
-Secure event registration
-
-Download branded PDF tickets with QR codes
-
-Submit ratings and reviews
-
-🧑‍💼 Organizers
-
+🛠️ Organizer Features
 Create and manage events
-
+Track attendees in real-time
+Upload event media
 View registered participants
-
 Export registrations as CSV
-
 Perform real-time QR / ID check-ins
 
 🛡️ Admin
@@ -36,156 +49,93 @@ Approve or reject organizer-submitted events
 
 Platform moderation
 
-🌐 Platform
+Manage movie system end to end
 
-Real-time updates via Socket.IO
 
-Dark mode & responsive UI
+⚡ Key Highlights
+🔄 Real-Time Updates using Socket.IO
+💳 Secure Payments via Razorpay integration
+🔐 Authentication System
+JWT-based login
+Role-based access control
+OTP verification
+🧾 Dynamic Ticket Generation
+QR Code-based entry
+Auto-generated PDF tickets
+☁️ Cloud Storage with Cloudinary
+🧠 Schema Validation using Zod
 
-Toast-based user notifications
+🏗️ Tech Stack
 
-🛠️ Tech Stack
-Backend
+Frontend:
 
-Node.js, Express.js
+React.js
 
-MongoDB + Mongoose
+Backend:
 
+Node.js
+Express.js
+
+Database:
+
+MongoDB
+
+Other Tools & Services:
+
+Socket.IO
+Razorpay
+Cloudinary
+Zod
 JWT Authentication
-
-Socket.IO (real-time)
-
-Frontend
-
-React (Vite)
-
-React Router
-
-Axios
-
-Tailwind CSS
-
-Utilities & Tooling
-
-PDF generation: html2canvas, jsPDF
-
-Custom QR code generation
-
-ESLint, Prettier
-
-Nodemon, PostCSS
 
 🧱 Architecture
 
-The project follows a monorepo architecture with clear separation of frontend and backend concerns.
+        ┌──────────────────────┐
+        │      Frontend        │
+        │     (React.js)       │
+        └─────────┬────────────┘
+                  │ HTTP / WebSocket
+                  ▼
+        ┌──────────────────────┐
+        │   Backend Server     │
+        │  (Node.js + Express) │
+        └─────────┬────────────┘
+                  │
+     ┌────────────┼────────────┬──────────────┐
+     ▼            ▼            ▼              ▼
+┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────────┐
+│ MongoDB  │ │ Razorpay │ │Cloudinary│ │  Socket.IO   │
+│ Database │ │ Payments │ │ Media    │ │ Real-Time    │
+└──────────┘ └──────────┘ └──────────┘ └──────────────┘
 
-Event-management-system/
-│
-├── backend/
-│   ├── src/
-│   │   ├── models/
-│   │   ├── routes/
-│   │   ├── controllers/
-│   │   ├── socket/
-│   │   └── seed.js
-│   └── package.json
-│
-├── frontend/
-│   ├── src/
-│   │   ├── pages/
-│   │   ├── components/
-│   │   ├── hooks/
-│   │   └── services/
-│   └── package.json
+📂 Project Structure
+.
+├── client/             # React frontend
+├── server/             # Express backend
+│   ├── controllers/    # Business logic
+│   ├── models/         # Database schemas
+│   ├── routes/         # API routes
+│   ├── middleware/     # Auth & validation
+│   └── utils/          # Helpers
+└── README.md
 
-🧠 Custom Hooks
+📈 Future Scope
+📊 Admin analytics dashboard
+📩 Email & SMS notifications
+📱 Mobile-first UI improvements
+🤖 AI-based event recommendations
+🌍 Multi-language support
+🤝 Contributing
 
-useTicketPDF
-Generates branded PDF tickets from HTML layouts with embedded QR codes.
+Want to improve this project?
 
-useQrCheckIn
-Enables real-time QR and ID-based event check-ins using Socket.IO.
+Fork the repository
+Create a new branch
+Commit your changes
+Open a Pull Request
+👨‍💻 Author
 
-⚙️ Getting Started
-Prerequisites
-
-Node.js 18+
-
-MongoDB (local or cloud instance)
-
-Installation
-git clone <your-repo-url>
-cd Event-management-system
-
-Backend
-cd backend
-npm install
-
-Frontend
-cd ../frontend
-npm install
-
-🔐 Environment Configuration
-
-Create `backend/.env`:
-
-PORT=5050
-MONGO_URI=mongodb://localhost:27017/eventmanager
-JWT_SECRET=supersecret
-CLIENT_URL=http://localhost:5173
-
-For multiple allowed frontend origins, use:
-
-CLIENT_URLS=http://localhost:5173,https://your-frontend.vercel.app
-
-Wildcard origins are also supported for preview deployments, for example:
-
-CLIENT_URLS=http://localhost:5173,https://*.vercel.app
-
-▶️ Running Locally
-Backend
-cd backend
-npm run dev
-
-Frontend
-cd frontend
-npm run dev
-
-🌱 Database Seeding (Optional)
-cd backend
-node src/seed.js
-
-Demo Accounts
-Role	Email	Password
-Customer	customer@example.com
-	password
-Organizer	organizer@example.com
-	password
-Admin	admin@example.com
-	password
-📜 Scripts
-Backend
-
-npm run dev – Start server with Nodemon
-
-Frontend
-
-npm run dev – Start Vite dev server
-
-npm run build – Production build
-
-npm run preview – Preview production build
-
-🚢 Deployment
-
-Configure environment variables on the host
-
-Serve frontend dist/ via CDN or static hosting
-
-Run backend using PM2 or Docker
-
-Set `CLIENT_URL` or `CLIENT_URLS` on the backend host so the deployed frontend origin is allowed by CORS
-
-Ensure Socket.IO support in production
+Ansh Rastogi
+🔗 GitHub: https://github.com/Anshrastogi05
 
 LICENSE MIT
