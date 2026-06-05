@@ -1,3 +1,5 @@
+import { API_BASE_URL } from '../config/network.js';
+
 const DIRECT_IP_API_ENDPOINT =
   "http://ip-api.com/json/?fields=status,message,city,region,regionName,country,query";
 
@@ -31,8 +33,10 @@ async function fetchDirectBrowserIpLocation() {
 }
 
 export async function fetchCurrentIpLocation() {
+  const backendEndpoint = `${API_BASE_URL}/api/location/current`;
+
   try {
-    const response = await fetch("/api/location/current", {
+    const response = await fetch(backendEndpoint, {
       credentials: "same-origin",
       headers: {
         Accept: "application/json",
