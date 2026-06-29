@@ -21,6 +21,7 @@ export default function Signup() {
         const query = new URLSearchParams({
           email: res.data.email || email,
           purpose: res.data.purpose || 'signup',
+          ...(res.data.otpCode ? { otp: res.data.otpCode } : {}),
           ...(res.data.expiresAt ? { expiresAt: res.data.expiresAt } : {}),
           ...(res.data.resendAvailableAt
             ? { resendAvailableAt: res.data.resendAvailableAt }

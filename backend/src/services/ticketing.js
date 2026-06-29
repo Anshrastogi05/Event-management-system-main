@@ -7,10 +7,18 @@ import Theater from "../models/Theater.js";
 import TicketBooking from "../models/TicketBooking.js";
 import TicketSeatReservation from "../models/TicketSeatReservation.js";
 import { env } from "../config/env.js";
+import { getRedisClient } from "../config/redis.js";
+import {
+  acquireTicketSeatHoldLocks,
+  releaseTicketSeatHoldLocks,
+  releaseTicketSeatHoldLocksForBooking,
+} from "./ticketRedis.js";
 import { emitTicketSeatMap } from "./socket.js";
 import { getPriceRange } from "../utils/ticketSeats.js";
 
 const ACTIVE_UNPAID_STATUSES = ["held", "pending_payment"];
+const SHOW_SNAPSHOT_TTL_SECONDS = 10;
+const showSnapshotMemoryCache = new Map();
 
 function toPlain(document) {
   return document?.toObject ? document.toObject() : document;
@@ -177,6 +185,115 @@ export function buildSeatSnapshot(show, reservations) {
   return { counters, seats };
 }
 
+function getShowSnapshotCacheKey(showId) {
+  return `snapshot:${showId}`;
+}
+
+function setMemoryShowSnapshot(showId, payload) {
+  showSnapshotMemoryCache.set(getShowSnapshotCacheKey(showId), {
+    value: payload,
+    expiresAt: Date.now() + SHOW_SNAPSHOT_TTL_SECONDS * 1000,
+  });
+}
+
+function getMemoryShowSnapshot(showId) {
+  const key = getShowSnapshotCacheKey(showId);
+  const entry = showSnapshotMemoryCache.get(key);
+  if (!entry) return null;
+
+  if (entry.expiresAt <= Date.now()) {
+    showSnapshotMemoryCache.delete(key);
+    return null;
+  }
+
+  return entry.value;
+}
+
+async function readRedisShowSnapshot(showId) {
+  const client = await getRedisClient();
+  if (!client) return null;
+
+  try {
+    const cached = await client.get(getShowSnapshotCacheKey(showId));
+    if (!cached) return null;
+
+    const parsed = JSON.parse(cached);
+    setMemoryShowSnapshot(showId, parsed);
+    return parsed;
+  } catch (error) {
+    console.warn(`Failed to read ticket show snapshot cache: ${error.message}`);
+    return null;
+  }
+}
+
+async function writeRedisShowSnapshot(showId, payload) {
+  const client = await getRedisClient();
+  if (!client) return;
+
+  try {
+    await client.setex(
+      getShowSnapshotCacheKey(showId),
+      SHOW_SNAPSHOT_TTL_SECONDS,
+      JSON.stringify(payload),
+    );
+  } catch (error) {
+    console.warn(`Failed to cache ticket show snapshot: ${error.message}`);
+  }
+}
+
+async function clearRedisShowSnapshot(showId) {
+  const client = await getRedisClient();
+  if (!client) return;
+
+  try {
+    await client.del(getShowSnapshotCacheKey(showId));
+  } catch (error) {
+    console.warn(`Failed to clear ticket show snapshot cache: ${error.message}`);
+  }
+}
+
+export async function invalidateShowCache(showId) {
+  if (!showId) return;
+
+  showSnapshotMemoryCache.delete(getShowSnapshotCacheKey(showId));
+  await clearRedisShowSnapshot(showId);
+}
+
+async function cacheTicketShowState(showId, payload) {
+  if (!showId || !payload) return payload;
+
+  setMemoryShowSnapshot(showId, payload);
+  await writeRedisShowSnapshot(showId, payload);
+  return payload;
+}
+
+export async function getShowSnapshot(showId) {
+  if (!showId) return null;
+
+  await cleanupExpiredTicketHolds(showId);
+
+  const cached = getMemoryShowSnapshot(showId) || (await readRedisShowSnapshot(showId));
+  if (cached) return cached;
+
+  const show = await findHydratedTicketShowById(showId);
+  if (!show) return null;
+
+  const reservations = await TicketSeatReservation.find({ show: showId });
+  const seatSnapshot = buildSeatSnapshot(show, reservations);
+  return cacheTicketShowState(showId, {
+    show: mapTicketShowSummary(show, seatSnapshot.counters),
+    seatSnapshot,
+  });
+}
+
+export async function lockSeats(showId, seatIds, lockValue, ttlSeconds) {
+  return acquireTicketSeatHoldLocks({ showId, seatIds, lockValue, ttlSeconds });
+}
+
+export async function releaseSeats(showId, seatIds, lockValue) {
+  return releaseTicketSeatHoldLocks({ showId, seatIds, lockValue });
+}
+
 export async function cleanupExpiredTicketHolds(showId = null) {
   const now = new Date();
   const filter = {
@@ -186,7 +303,7 @@ export async function cleanupExpiredTicketHolds(showId = null) {
 
   if (showId) filter.show = showId;
 
-  const expiredBookings = await TicketBooking.find(filter).select("_id show");
+  const expiredBookings = await TicketBooking.find(filter).select("_id show seats bookingReference");
   if (!expiredBookings.length) return [];
 
   const bookingIds = expiredBookings.map((booking) => booking._id);
@@ -202,6 +319,8 @@ export async function cleanupExpiredTicketHolds(showId = null) {
     booking: { $in: bookingIds },
     status: "held",
   });
+  await Promise.all(expiredBookings.map((booking) => releaseTicketSeatHoldLocksForBooking(booking)));
+  await Promise.all(affectedShowIds.map((id) => invalidateShowCache(id)));
 
   return affectedShowIds;
 }
@@ -211,7 +330,7 @@ export async function cancelActiveBookingsForUser(showId, userId) {
     show: showId,
     user: userId,
     status: { $in: ACTIVE_UNPAID_STATUSES },
-  }).select("_id show");
+  }).select("_id show seats bookingReference");
 
   if (!existingBookings.length) return [];
 
@@ -228,22 +347,14 @@ export async function cancelActiveBookingsForUser(showId, userId) {
     booking: { $in: bookingIds },
     status: "held",
   });
+  await Promise.all(existingBookings.map((booking) => releaseTicketSeatHoldLocksForBooking(booking)));
+  await Promise.all(affectedShowIds.map((id) => invalidateShowCache(id)));
 
   return affectedShowIds;
 }
 
 export async function getTicketShowSeatState(showId) {
-  const show = await findHydratedTicketShowById(showId);
-  if (!show) return null;
-
-  await cleanupExpiredTicketHolds(showId);
-  const reservations = await TicketSeatReservation.find({ show: showId });
-  const seatSnapshot = buildSeatSnapshot(show, reservations);
-
-  return {
-    show: mapTicketShowSummary(show, seatSnapshot.counters),
-    seatSnapshot,
-  };
+  return getShowSnapshot(showId);
 }
 
 export async function broadcastTicketSeatState(showId) {

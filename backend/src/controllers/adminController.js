@@ -6,11 +6,13 @@ import Seat from "../models/Seat.js";
 import Show from "../models/Show.js";
 import Theater from "../models/Theater.js";
 import TicketSeatReservation from "../models/TicketSeatReservation.js";
+import TicketBooking from "../models/TicketBooking.js";
 import User from "../models/User.js";
 import {
   createMovieShowCatalogEntry,
   ensureTicketShowsSeeded,
 } from "../services/ticketCatalog.js";
+import INDIA_CITIES from "../config/indiaCities.js";
 import {
   findHydratedTicketShowById,
   listHydratedTicketShows,
@@ -85,7 +87,9 @@ function parseBoolean(value) {
   if (typeof value === "boolean") return value;
 
   return ["true", "1", "on", "yes"].includes(
-    String(value || "").trim().toLowerCase(),
+    String(value || "")
+      .trim()
+      .toLowerCase(),
   );
 }
 
@@ -176,16 +180,14 @@ async function loadRegistrationUsers() {
     const userId = registration.user?._id?.toString();
     if (!userId) continue;
 
-    const existing =
-      usersById.get(userId) ||
-      {
-        _id: userId,
-        name: registration.user?.name,
-        email: registration.user?.email,
-        registrations: 0,
-        events: [],
-        eventIds: new Set(),
-      };
+    const existing = usersById.get(userId) || {
+      _id: userId,
+      name: registration.user?.name,
+      email: registration.user?.email,
+      registrations: 0,
+      events: [],
+      eventIds: new Set(),
+    };
 
     existing.registrations += 1;
 
@@ -193,9 +195,9 @@ async function loadRegistrationUsers() {
     if (
       eventId &&
       registration.event?.title &&
-      !existing.eventIds.has(eventId)
+      !existing.eventIds.has(`event:${eventId}`)
     ) {
-      existing.eventIds.add(eventId);
+      existing.eventIds.add(`event:${eventId}`);
       existing.events.push({
         _id: eventId,
         title: registration.event.title,
@@ -203,6 +205,64 @@ async function loadRegistrationUsers() {
     }
 
     usersById.set(userId, existing);
+  }
+
+  // Include movie ticket bookings (count paid bookings as registrations)
+  try {
+    const bookings = await TicketBooking.find({ status: "paid" })
+      .populate("user", "name email")
+      .populate("show")
+      .sort({ createdAt: -1 })
+      .lean();
+
+    const movieIds = [
+      ...new Set(bookings.map((b) => b.show?.movie_id).filter(Boolean)),
+    ];
+
+    const moviesById = new Map();
+    if (movieIds.length > 0) {
+      const movies = await Movie.find({ movie_id: { $in: movieIds } })
+        .select("movie_id title")
+        .lean();
+      for (const m of movies) {
+        moviesById.set(String(m.movie_id), m.title);
+      }
+    }
+
+    for (const booking of bookings) {
+      const userId = booking.user?._id?.toString();
+      if (!userId) continue;
+
+      const existing = usersById.get(userId) || {
+        _id: userId,
+        name: booking.user?.name,
+        email: booking.user?.email,
+        registrations: 0,
+        events: [],
+        eventIds: new Set(),
+      };
+
+      existing.registrations += 1;
+
+      const movieId = booking.show?.movie_id;
+      const movieTitle =
+        moviesById.get(String(movieId)) ||
+        booking.show?.title ||
+        "Movie booking";
+      const movieKey = `movie:${movieId || booking._id}`;
+
+      if (movieId && !existing.eventIds.has(movieKey)) {
+        existing.eventIds.add(movieKey);
+        existing.events.push({
+          _id: movieKey,
+          title: movieTitle,
+        });
+      }
+
+      usersById.set(userId, existing);
+    }
+  } catch (err) {
+    console.error("Failed to load ticket booking users:", err.message || err);
   }
 
   return [...usersById.values()]
@@ -238,6 +298,7 @@ async function loadDashboardSummary() {
     totalEvents,
     approvedEvents,
     totalRegistrations,
+    paidTicketBookings,
     totalCustomers,
     totalOrganizers,
   ] = await Promise.all([
@@ -246,6 +307,7 @@ async function loadDashboardSummary() {
     Registration.countDocuments({
       status: { $in: ACTIVE_REGISTRATION_STATUSES },
     }),
+    TicketBooking.countDocuments({ status: "paid" }),
     User.countDocuments({ role: "customer", isBlocked: false }),
     User.countDocuments({ role: "organizer", isBlocked: false }),
   ]);
@@ -253,7 +315,7 @@ async function loadDashboardSummary() {
   return {
     events: totalEvents,
     approvedEvents,
-    registrations: totalRegistrations,
+    registrations: (totalRegistrations || 0) + (paidTicketBookings || 0),
     customers: totalCustomers,
     organizers: totalOrganizers,
   };
@@ -289,7 +351,9 @@ export const getAdminDashboard = async (_req, res) => {
     const warnings = [];
 
     const pendingEvents =
-      pendingEventsResult.status === "fulfilled" ? pendingEventsResult.value : [];
+      pendingEventsResult.status === "fulfilled"
+        ? pendingEventsResult.value
+        : [];
     if (pendingEventsResult.status === "rejected") {
       warnings.push("Pending events could not be loaded.");
     }
@@ -314,9 +378,142 @@ export const getAdminDashboard = async (_req, res) => {
         .json({ message: "Unable to load the admin dashboard." });
     }
 
+    // Enrich movieShows with booking counts and revenue per show
+    try {
+      const showIds = movieShows.map((s) => s._id).filter(Boolean);
+      if (showIds.length > 0) {
+        const bookings = await TicketBooking.find({
+          show: { $in: showIds },
+          status: "paid",
+        }).lean();
+        const bookingsByShow = new Map();
+        for (const b of bookings) {
+          const key = String(b.show);
+          const list = bookingsByShow.get(key) || [];
+          list.push(b);
+          bookingsByShow.set(key, list);
+        }
+
+        for (const show of movieShows) {
+          const list = bookingsByShow.get(String(show._id)) || [];
+          const uniqueUsers = new Set(list.map((x) => String(x.user)));
+          const revenue = list.reduce((s, x) => s + Number(x.amount || 0), 0);
+          show._meta = show._meta || {};
+          show._meta.bookedUsers = uniqueUsers.size;
+          show._meta.paidBookings = list.length;
+          show._meta.revenue = revenue;
+        }
+      }
+    } catch (err) {
+      // don't block dashboard on movie stats failure
+      console.error(
+        "Failed to compute movie booking stats:",
+        err.message || err,
+      );
+    }
+
     res.json({ pendingEvents, summary, movieShows, warnings });
   } catch (err) {
     res.status(500).json({ message: err.message });
+  }
+};
+
+export const getAdminAnalytics = async (_req, res) => {
+  try {
+    // Event registrations
+    const registrations = await Registration.find({
+      status: { $in: ACTIVE_REGISTRATION_STATUSES },
+    })
+      .populate("event", "title")
+      .lean();
+
+    const eventMap = new Map();
+    for (const r of registrations) {
+      const eventObj = r.event || {};
+      const eventId = eventObj._id ? String(eventObj._id) : String(r.event);
+      const title = eventObj.title || "Untitled Event";
+      const entry = eventMap.get(eventId) || {
+        id: eventId,
+        title,
+        registrations: 0,
+        uniqueUsers: new Set(),
+        revenue: 0,
+      };
+      entry.registrations += 1;
+      if (r.user) entry.uniqueUsers.add(String(r.user));
+      entry.revenue += Number(r.amount || 0);
+      eventMap.set(eventId, entry);
+    }
+
+    const eventStats = [...eventMap.values()].map((e) => ({
+      id: e.id,
+      title: e.title,
+      registrations: e.registrations,
+      uniqueUsers: e.uniqueUsers.size,
+      revenue: e.revenue,
+    }));
+
+    // Movie ticket bookings
+    const paidBookings = await TicketBooking.find({ status: "paid" }).lean();
+    const showIds = [
+      ...new Set(paidBookings.map((b) => String(b.show))),
+    ].filter(Boolean);
+    const shows = showIds.length
+      ? await Show.find({ _id: { $in: showIds } }).lean()
+      : [];
+    const showById = new Map(shows.map((s) => [String(s._id), s]));
+    const movieIds = [...new Set(shows.map((s) => s.movie_id).filter(Boolean))];
+    const movies = movieIds.length
+      ? await Movie.find({ movie_id: { $in: movieIds } }).lean()
+      : [];
+    const moviesById = new Map(movies.map((m) => [String(m.movie_id), m]));
+
+    const movieMap = new Map();
+    for (const b of paidBookings) {
+      const show = showById.get(String(b.show));
+      const movieId = show?.movie_id || "unknown";
+      const title =
+        moviesById.get(String(movieId))?.title ||
+        show?.title ||
+        "Untitled Movie";
+      const entry = movieMap.get(movieId) || {
+        id: movieId,
+        title,
+        paidBookings: 0,
+        uniqueUsers: new Set(),
+        revenue: 0,
+      };
+      entry.paidBookings += 1;
+      if (b.user) entry.uniqueUsers.add(String(b.user));
+      entry.revenue += Number(b.amount || 0);
+      movieMap.set(movieId, entry);
+    }
+
+    const movieStats = [...movieMap.values()].map((m) => ({
+      id: m.id,
+      title: m.title,
+      paidBookings: m.paidBookings,
+      uniqueUsers: m.uniqueUsers.size,
+      revenue: m.revenue,
+    }));
+
+    const totals = {
+      totalEventRevenue: eventStats.reduce((s, e) => s + e.revenue, 0),
+      totalMovieRevenue: movieStats.reduce((s, m) => s + m.revenue, 0),
+      totalRevenue:
+        eventStats.reduce((s, e) => s + e.revenue, 0) +
+        movieStats.reduce((s, m) => s + m.revenue, 0),
+      totalEventRegistrations: eventStats.reduce(
+        (s, e) => s + e.registrations,
+        0,
+      ),
+      totalPaidBookings: movieStats.reduce((s, m) => s + m.paidBookings, 0),
+    };
+
+    res.json({ eventStats, movieStats, totals });
+  } catch (err) {
+    console.error("Failed to compute admin analytics:", err);
+    res.status(500).json({ message: "Unable to compute analytics." });
   }
 };
 
@@ -391,30 +588,66 @@ export const createAdminMovieShow = async (req, res) => {
       : null;
     const featured = parseBoolean(req.body.featured);
 
-    const show = await createMovieShowCatalogEntry({
-      title,
-      genre,
-      rating,
-      subtitle,
-      description,
-      venue,
-      city,
-      date: showDate,
-      duration: durationMinutes,
-      currency,
-      posterUrl: uploadedPoster?.url,
-      language,
-      featured,
-      tags: parseTags(req.body.tags),
-      screenName,
-      seatLayout,
-    });
-    const hydratedShow = await findHydratedTicketShowById(show._id);
+    if (city === "ALL_CITIES") {
+      // Roll out the same show across all configured Indian cities
+      const createdShows = [];
+      for (const targetCity of INDIA_CITIES) {
+        const s = await createMovieShowCatalogEntry({
+          title,
+          genre,
+          rating,
+          subtitle,
+          description,
+          venue,
+          city: targetCity,
+          date: showDate,
+          duration: durationMinutes,
+          currency,
+          posterUrl: uploadedPoster?.url,
+          language,
+          featured,
+          tags: parseTags(req.body.tags),
+          screenName,
+          seatLayout,
+        });
+        createdShows.push(s);
+      }
 
-    res.status(201).json({
-      message: `${title} was added to the movies page.`,
-      show: hydratedShow,
-    });
+      const hydratedShows = await Promise.all(
+        createdShows.map((s) => findHydratedTicketShowById(s._id)),
+      );
+
+      res.status(201).json({
+        message: `${title} was added to ${hydratedShows.length} cities.`,
+        shows: hydratedShows,
+      });
+    } else {
+      const show = await createMovieShowCatalogEntry({
+        title,
+        genre,
+        rating,
+        subtitle,
+        description,
+        venue,
+        city,
+        date: showDate,
+        duration: durationMinutes,
+        currency,
+        posterUrl: uploadedPoster?.url,
+        language,
+        featured,
+        tags: parseTags(req.body.tags),
+        screenName,
+        seatLayout,
+      });
+
+      const hydratedShow = await findHydratedTicketShowById(show._id);
+
+      res.status(201).json({
+        message: `${title} was added to the movies page.`,
+        show: hydratedShow,
+      });
+    }
   } catch (err) {
     res.status(err.status || 500).json({ message: err.message });
   }
@@ -436,16 +669,26 @@ export const updateAdminMovieShow = async (req, res) => {
     const venue = normalizeText(req.body.venue);
     const city = normalizeText(req.body.city);
     const screenName =
-      normalizeText(req.body.screenName) || sourceShow.screen?.name || `${title} Screen`;
+      normalizeText(req.body.screenName) ||
+      sourceShow.screen?.name ||
+      `${title} Screen`;
     const language = normalizeText(req.body.language);
-    const rating = parseDecimal(req.body.rating, "Rating", sourceShow.rating || 0, {
-      min: 0,
-      max: 10,
-    });
+    const rating = parseDecimal(
+      req.body.rating,
+      "Rating",
+      sourceShow.rating || 0,
+      {
+        min: 0,
+        max: 10,
+      },
+    );
     const currency =
-      normalizeText(req.body.currency || sourceShow.currency || "INR").toUpperCase() ||
-      "INR";
-    const showDate = req.body.date ? new Date(req.body.date) : new Date(sourceShow.date);
+      normalizeText(
+        req.body.currency || sourceShow.currency || "INR",
+      ).toUpperCase() || "INR";
+    const showDate = req.body.date
+      ? new Date(req.body.date)
+      : new Date(sourceShow.date);
 
     if (!title) throw createBadRequest("Movie title is required.");
     if (!description) throw createBadRequest("Movie description is required.");
@@ -532,7 +775,10 @@ export const updateAdminMovieShow = async (req, res) => {
     }
 
     if (featured) {
-      await Show.updateMany({ featured: true, _id: { $ne: sourceShow._id } }, { featured: false });
+      await Show.updateMany(
+        { featured: true, _id: { $ne: sourceShow._id } },
+        { featured: false },
+      );
     }
 
     await Show.updateOne(
@@ -559,7 +805,7 @@ export const approveEvent = async (req, res) => {
   try {
     const event = await Event.findByIdAndUpdate(
       req.params.id,
-      { status: "approved" },
+      { status: "approved", sentForApprovalAt: undefined },
       { new: true },
     );
     if (!event) return res.status(404).json({ message: "Not found" });
@@ -576,7 +822,7 @@ export const rejectEvent = async (req, res) => {
   try {
     const event = await Event.findByIdAndUpdate(
       req.params.id,
-      { status: "rejected" },
+      { status: "rejected", sentForApprovalAt: undefined },
       { new: true },
     );
     if (!event) return res.status(404).json({ message: "Not found" });

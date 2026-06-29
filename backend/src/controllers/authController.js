@@ -49,6 +49,7 @@ function buildAuthPayload(user) {
     email: user.email,
     role: user.role,
     isEmailVerified: user.isEmailVerified,
+    walletBalance: user.walletBalance || 0,
   };
 }
 
@@ -241,6 +242,7 @@ async function sendWelcomeEmail(user) {
 async function issueOtpChallenge(user, purpose) {
   const { rawCode, hashedCode, expiresAt } = createOtpCode();
   const sentAt = new Date();
+  const hasMailTransport = Boolean(env.smtpHost && env.emailFrom);
 
   user.authOtpCodeHash = hashedCode;
   user.authOtpExpiresAt = expiresAt;
@@ -263,7 +265,16 @@ async function issueOtpChallenge(user, purpose) {
     );
   }
 
-  return buildOtpChallengeResponse(user, purpose, emailDeliveryFailed);
+  const response = buildOtpChallengeResponse(
+    user,
+    purpose,
+    emailDeliveryFailed,
+  );
+  if (!hasMailTransport) {
+    response.otpCode = rawCode;
+  }
+
+  return response;
 }
 
 export const signup = async (req, res) => {
@@ -364,10 +375,7 @@ export const verifyOtp = async (req, res) => {
       });
     }
 
-    if (
-      !user.authOtpExpiresAt ||
-      user.authOtpExpiresAt <= new Date()
-    ) {
+    if (!user.authOtpExpiresAt || user.authOtpExpiresAt <= new Date()) {
       return res.status(400).json({ message: "OTP expired" });
     }
 
@@ -393,7 +401,7 @@ export const verifyOtp = async (req, res) => {
     await user.save({ validateBeforeSave: false });
 
     if (purpose === "signup") {
-      await sendWelcomeEmail(user);
+      void sendWelcomeEmail(user);
     }
 
     const token = generateJwtToken({
@@ -473,18 +481,42 @@ export const forgotPassword = async (req, res) => {
     user.passwordResetExpiresAt = expiresAt;
     await user.save({ validateBeforeSave: false });
 
+    const resetUrl = buildClientUrl(
+      `/reset-password?token=${encodeURIComponent(rawToken)}`,
+    );
+
     try {
       await sendEmail({
         to: user.email,
         ...buildPasswordResetEmail(user, rawToken),
       });
     } catch (error) {
+      console.error(
+        `Failed to send password reset email to ${user.email}: ${error.message}`,
+      );
+
+      const resetUrl = buildClientUrl(
+        `/reset-password?token=${encodeURIComponent(rawToken)}`,
+      );
+
+      // If SMTP is not configured or we're in development, expose the reset URL
+      // in the response to allow local testing without email delivery.
+      if (!env.smtpHost || env.nodeEnv === "development") {
+        return res.json({ message: genericMessage, resetUrl });
+      }
+
+      // On production-like environments, clear token and surface an error.
       user.passwordResetToken = undefined;
       user.passwordResetExpiresAt = undefined;
       await user.save({ validateBeforeSave: false });
       return res.status(500).json({
         message: "Unable to send reset email right now. Please try again.",
       });
+    }
+
+    // In development mode include the reset URL in the response for easier testing
+    if (env.nodeEnv === "development") {
+      return res.json({ message: genericMessage, resetUrl });
     }
 
     return res.json({ message: genericMessage });
@@ -571,7 +603,10 @@ export const me = async (req, res) => {
         email: user.email,
         role: user.role,
         points: user.points,
+        walletBalance: user.walletBalance || 0,
         isEmailVerified: user.isEmailVerified,
+        avatarUrl: user.avatarUrl,
+        createdAt: user.createdAt,
       },
     });
   } catch (err) {

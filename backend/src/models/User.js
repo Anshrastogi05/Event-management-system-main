@@ -10,6 +10,7 @@ const userSchema = new mongoose.Schema(
     isBlocked: { type: Boolean, default: false },
     isEmailVerified: { type: Boolean, default: false },
     points: { type: Number, default: 0 },
+    walletBalance: { type: Number, default: 0 },
     interests: [{ type: String }],
     avatarUrl: { type: String },
     authOtpCodeHash: { type: String, select: false },

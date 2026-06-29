@@ -519,6 +519,7 @@ import { useEffect, useCallback, useState } from "react";
 import { Link } from "react-router-dom";
 import axios from "axios";
 import MovieBookingsDialog from "../components/MovieBookingsDialog.jsx";
+import useDebouncedValue from "../hooks/useDebouncedValue.js";
 import { useAuth } from "../context/AuthContext.jsx";
 import { useLocationSelection } from "../context/useLocationSelection.js";
 
@@ -579,6 +580,7 @@ export default function MovieShows() {
   const [bookingDialogLoading, setBookingDialogLoading] = useState(false);
   const [bookingDialogError, setBookingDialogError] = useState("");
   const [userBookings, setUserBookings] = useState([]);
+  const debouncedQuery = useDebouncedValue(query, 300);
 
   useEffect(() => {
     const timer = window.setInterval(() => setCurrentTime(Date.now()), 60000);
@@ -635,13 +637,8 @@ export default function MovieShows() {
     };
   }, [bookingDialogOpen, user]);
 
-  // ✅ FIXED: useEffectEvent replaced with useCallback
   const loadMovies = useCallback(
-    async (
-      nextQuery = query,
-      nextDate = selectedDate,
-      nextCity = selectedCity,
-    ) => {
+    async ({ nextQuery = "", nextDate, nextCity } = {}) => {
       setLoading(true);
       setError("");
 
@@ -665,13 +662,16 @@ export default function MovieShows() {
         setLoading(false);
       }
     },
-    [query, selectedDate, selectedCity], // ✅ dependency array
+    [],
   );
 
-  // ✅ FIXED: removed loadMovies from deps to avoid infinite loop
   useEffect(() => {
-    loadMovies(undefined, undefined, selectedCity);
-  }, [selectedCity]); // eslint-disable-line react-hooks/exhaustive-deps
+    void loadMovies({
+      nextQuery: debouncedQuery,
+      nextDate: selectedDate,
+      nextCity: selectedCity,
+    });
+  }, [debouncedQuery, loadMovies, selectedCity, selectedDate]);
 
   const dateStrip = buildDateStrip(selectedDate);
   const today = new Date(currentTime);
@@ -682,7 +682,6 @@ export default function MovieShows() {
     const nextDate = new Date(selectedDate);
     nextDate.setDate(nextDate.getDate() + direction);
     setSelectedDate(nextDate);
-    loadMovies(query, nextDate, selectedCity);
   }
 
   return (
@@ -749,7 +748,6 @@ export default function MovieShows() {
                       type="button"
                       onClick={() => {
                         setSelectedDate(date);
-                        loadMovies(query, date, selectedCity);
                       }}
                       className={`min-w-[96px] rounded-[1.5rem] border px-4 py-4 text-center transition ${
                         isSelected
@@ -790,17 +788,14 @@ export default function MovieShows() {
                 onKeyDown={(event) => {
                   if (event.key === "Enter") {
                     event.preventDefault();
-                    loadMovies(query, selectedDate, selectedCity);
+                    void loadMovies({
+                      nextQuery: query,
+                      nextDate: selectedDate,
+                      nextCity: selectedCity,
+                    });
                   }
                 }}
               />
-              <button
-                type="button"
-                className="rounded-2xl bg-emerald-400 px-5 py-3 text-sm font-semibold text-slate-950 transition hover:bg-emerald-300"
-                onClick={() => loadMovies(query, selectedDate, selectedCity)}
-              >
-                Find shows
-              </button>
               {user ? (
                 <button
                   type="button"
@@ -920,7 +915,13 @@ export default function MovieShows() {
             )}
             <button
               className="btn-outline"
-              onClick={() => loadMovies(query, selectedDate, selectedCity)}
+              onClick={() =>
+                void loadMovies({
+                  nextQuery: query,
+                  nextDate: selectedDate,
+                  nextCity: selectedCity,
+                })
+              }
             >
               Refresh movies
             </button>

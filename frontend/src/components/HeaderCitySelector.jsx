@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import INDIA_CITIES from "../config/indiaCities.js";
 import { useLocationSelection } from "../context/useLocationSelection.js";
 import { fetchCurrentIpLocation } from "../utils/ipLocation.js";
 
@@ -87,6 +88,15 @@ export default function HeaderCitySelector() {
     message: "",
   });
   const rootRef = useRef(null);
+  const matchingCities = useMemo(() => {
+    const term = inputValue.trim().toLowerCase();
+    if (!term) return [];
+
+    return INDIA_CITIES.filter((city) => city.toLowerCase().includes(term)).slice(
+      0,
+      6,
+    );
+  }, [inputValue]);
 
   useEffect(() => {
     function handlePointerDown(event) {
@@ -98,18 +108,26 @@ export default function HeaderCitySelector() {
     return () => document.removeEventListener("mousedown", handlePointerDown);
   }, []);
 
-  function submitInputValue() {
-    const nextValue = inputValue.trim();
-    if (!nextValue) return;
+  function submitInputValue(nextValue = inputValue) {
+    const normalizedValue = String(nextValue || "").trim();
+    if (!normalizedValue) return;
 
     setSelectedLocation({
-      city: nextValue,
-      label: nextValue,
+      city: normalizedValue,
+      label: normalizedValue,
       source: "manual",
     });
     setInputValue("");
     setMenuOpen(false);
     setLiveLocationState({ status: "idle", message: "" });
+  }
+
+  function submitBestMatch() {
+    const nextValue =
+      matchingCities.length === 1 ? matchingCities[0] : inputValue.trim();
+    if (!nextValue) return;
+
+    submitInputValue(nextValue);
   }
 
   async function detectLiveLocation() {
@@ -172,7 +190,7 @@ export default function HeaderCitySelector() {
         <div className="flex items-center overflow-hidden rounded-2xl border border-slate-200 bg-white transition dark:border-slate-800 dark:bg-slate-900">
           <button
             type="button"
-            onClick={submitInputValue}
+            onClick={submitBestMatch}
             className="flex h-12 w-12 items-center justify-center text-slate-400 transition hover:text-emerald-600 dark:hover:text-emerald-300"
             aria-label="Search city"
           >
@@ -182,12 +200,15 @@ export default function HeaderCitySelector() {
           <input
             type="text"
             value={inputValue}
-            onChange={(event) => setInputValue(event.target.value)}
+            onChange={(event) => {
+              setInputValue(event.target.value);
+              setMenuOpen(false);
+            }}
             onFocus={() => setMenuOpen(false)}
             onKeyDown={(event) => {
               if (event.key === "Enter") {
                 event.preventDefault();
-                submitInputValue();
+                submitBestMatch();
               }
             }}
             className="h-12 w-full border-none bg-transparent pr-3 text-sm text-slate-900 outline-none placeholder:text-slate-400 dark:text-white dark:placeholder:text-slate-500"
@@ -206,6 +227,28 @@ export default function HeaderCitySelector() {
             </button>
           ) : null}
         </div>
+
+        {inputValue && matchingCities.length > 0 ? (
+          <div className="absolute left-0 top-[calc(100%+0.55rem)] z-40 w-full overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_18px_40px_-30px_rgba(15,23,42,0.45)] dark:border-slate-800 dark:bg-slate-900">
+            <div className="border-b border-slate-100 px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-400 dark:border-slate-800 dark:text-slate-500">
+              Matching Cities
+            </div>
+            <ul className="max-h-64 overflow-auto p-2">
+              {matchingCities.map((city) => (
+                <li key={city}>
+                  <button
+                    type="button"
+                    onClick={() => submitInputValue(city)}
+                    className="flex w-full items-center justify-between rounded-xl px-3 py-3 text-left text-sm font-medium text-slate-700 transition hover:bg-emerald-50 dark:text-slate-200 dark:hover:bg-slate-800"
+                  >
+                    <span className="truncate">{city}</span>
+                    <span className="text-xs text-slate-400">Select</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
       </div>
 
       <div className="relative">

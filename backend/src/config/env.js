@@ -34,12 +34,31 @@ function compileOriginPatterns(urls = []) {
     });
 }
 
+function isLoopbackOrigin(origin = "") {
+  if (!origin) return false;
+
+  try {
+    const { hostname } = new URL(origin);
+    return ["localhost", "127.0.0.1", "::1"].includes(hostname);
+  } catch {
+    return false;
+  }
+}
+
 const defaultClientUrls = ["http://localhost:5173"];
-const clientUrls = parseClientUrls(process.env.CLIENT_URLS, process.env.CLIENT_URL);
+const clientUrls = parseClientUrls(
+  process.env.CLIENT_URLS,
+  process.env.CLIENT_URL,
+);
 const allowedClientUrls = clientUrls.length ? clientUrls : defaultClientUrls;
 const allowedClientOriginPatterns = compileOriginPatterns(allowedClientUrls);
+// Choose a single primary client URL. If `CLIENT_URL` contains multiple
+// comma-separated values, prefer the first parsed entry from `clientUrls`.
 const primaryClientUrl =
-  normalizeUrl(process.env.CLIENT_URL) ||
+  (process.env.CLIENT_URL &&
+    !process.env.CLIENT_URL.includes(",") &&
+    normalizeUrl(process.env.CLIENT_URL)) ||
+  clientUrls[0] ||
   allowedClientUrls.find(
     (url) =>
       !url.includes("*") &&
@@ -64,9 +83,7 @@ export const env = {
   jwtSecret: process.env.JWT_SECRET,
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || "7d",
 
-  authOtpExpiresInMinutes: Number(
-    process.env.AUTH_OTP_EXPIRES_IN_MINUTES || 5,
-  ),
+  authOtpExpiresInMinutes: Number(process.env.AUTH_OTP_EXPIRES_IN_MINUTES || 5),
   authOtpMaxAttempts: Number(process.env.AUTH_OTP_MAX_ATTEMPTS || 5),
   authOtpResendCooldownSeconds: Number(
     process.env.AUTH_OTP_RESEND_COOLDOWN_SECONDS || 60,
@@ -93,13 +110,24 @@ export const env = {
   cloudinaryApiSecret: process.env.CLOUDINARY_API_SECRET,
   cloudinaryFolder: process.env.CLOUDINARY_FOLDER || "event-manager",
 
+  redisUrl: process.env.REDIS_URL || "",
+  redisHost: process.env.REDIS_HOST || "localhost",
+  redisPort: Number(process.env.REDIS_PORT || 6379),
+  redisPassword: process.env.REDIS_PASSWORD || "",
+
   ticketHoldMinutes: Number(process.env.TICKET_HOLD_MINUTES || 8),
+  eventReminderLookaheadHours: Number(process.env.EVENT_REMINDER_LOOKAHEAD_HOURS || 24),
+  eventReminderIntervalMinutes: Number(process.env.EVENT_REMINDER_INTERVAL_MINUTES || 60),
+  elasticUrl: process.env.ELASTIC_URL || "",
+  razorpayWebhookSecret:
+    process.env.RAZORPAY_WEBHOOK_SECRET || process.env.RAZORPAY_KEY_SECRET || "",
 };
 
 export function isAllowedClientOrigin(origin) {
   const normalizedOrigin = normalizeUrl(origin || "");
   return (
     !normalizedOrigin ||
+    isLoopbackOrigin(normalizedOrigin) ||
     env.clientUrls.includes(normalizedOrigin) ||
     allowedClientOriginPatterns.some((pattern) =>
       pattern.test(normalizedOrigin),

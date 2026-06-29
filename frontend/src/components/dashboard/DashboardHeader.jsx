@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+import { useNavigate } from 'react-router-dom';
 
 export default function DashboardHeader({
   title,
@@ -25,6 +26,7 @@ export default function DashboardHeader({
   const avatarSrc = user?.avatar || user?.image || user?.picture || null;
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef(null);
+  const navigate = useNavigate();
 
   useEffect(() => {
     const handleOutside = (e) => {
@@ -90,7 +92,7 @@ export default function DashboardHeader({
                     className="w-full text-left px-4 py-2 text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700"
                     onClick={() => {
                       setMenuOpen(false);
-                      // TODO: navigate to profile page if app router available
+                      navigate('/profile');
                     }}
                   >
                     My Profile

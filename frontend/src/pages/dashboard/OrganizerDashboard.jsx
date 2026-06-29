@@ -20,6 +20,47 @@ function formatCurrency(amount, currency = "INR") {
   }).format(amount || 0);
 }
 
+function normalizeTicketOptionKey(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+function createEmptyTicketOption(index = 0, overrides = {}) {
+  const label = overrides.label || (index === 0 ? "Free Registration" : `Ticket Tier ${index + 1}`);
+
+  return {
+    key: overrides.key || normalizeTicketOptionKey(label) || `tier-${index + 1}`,
+    label,
+    description: overrides.description || "",
+    price: overrides.price ?? (index === 0 ? "0" : "199"),
+    capacity: overrides.capacity ?? "0",
+    featured: Boolean(overrides.featured ?? index === 0),
+    active: overrides.active !== false,
+  };
+}
+
+function serializeTicketOptions(ticketOptions = []) {
+  return ticketOptions.map((option, index) => {
+    const label = String(option?.label || "").trim();
+    const keySource = String(option?.key || label || `ticket-${index + 1}`)
+      .trim()
+      .toLowerCase();
+
+    return {
+      key: keySource.replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || `ticket-${index + 1}`,
+      label: label || `Ticket Tier ${index + 1}`,
+      description: String(option?.description || "").trim(),
+      price: Math.max(0, Number(option?.price || 0)),
+      capacity: Math.max(0, Number(option?.capacity || 0)),
+      featured: Boolean(option?.featured),
+      active: option?.active !== false,
+    };
+  });
+}
+
 function formatEventMeta(event) {
   return `${new Date(event.date).toLocaleDateString()} | ${event.location}`;
 }
@@ -89,8 +130,24 @@ export default function OrganizerDashboard() {
   const [location, setLocation] = useState("");
   const [category, setCategory] = useState("Tech");
   const [description, setDescription] = useState("");
+  const [capacity, setCapacity] = useState("0");
   const [permanentBookingPrice, setPermanentBookingPrice] = useState("0");
+  const [ticketOptions, setTicketOptions] = useState([
+    createEmptyTicketOption(0, {
+      label: "Free Registration",
+      price: "0",
+      capacity: "0",
+      featured: false,
+    }),
+    createEmptyTicketOption(1, {
+      label: "Permanent Booking",
+      price: "199",
+      capacity: "0",
+      featured: true,
+    }),
+  ]);
   const [poster, setPoster] = useState(null);
+  const [posterUrl, setPosterUrl] = useState('');
   const [participantModalOpen, setParticipantModalOpen] = useState(false);
   const [toast, setToast] = useState({
     open: false,
@@ -105,6 +162,53 @@ export default function OrganizerDashboard() {
       3000,
     );
   };
+
+  const configuredSeatCapacity = useMemo(
+    () =>
+      ticketOptions
+        .filter((option) => option.active !== false)
+        .reduce(
+          (total, option) => total + (Number(option.capacity || 0) || 0),
+          0,
+        ),
+    [ticketOptions],
+  );
+  const eventCapacityValue = Number(capacity || 0);
+  const capacityMismatch =
+    eventCapacityValue > 0 && configuredSeatCapacity > eventCapacityValue;
+
+  function addTicketOption() {
+    setTicketOptions((current) => [
+      ...current,
+      createEmptyTicketOption(current.length),
+    ]);
+  }
+
+  function removeTicketOption(index) {
+    setTicketOptions((current) => {
+      if (current.length <= 1) return current;
+      return current.filter((_, currentIndex) => currentIndex !== index);
+    });
+  }
+
+  function moveTicketOption(index, direction) {
+    setTicketOptions((current) => {
+      const nextIndex = index + direction;
+      if (nextIndex < 0 || nextIndex >= current.length) return current;
+
+      const next = [...current];
+      [next[index], next[nextIndex]] = [next[nextIndex], next[index]];
+      return next;
+    });
+  }
+
+  function updateTicketOption(index, field, value) {
+    setTicketOptions((current) =>
+      current.map((option, currentIndex) =>
+        currentIndex === index ? { ...option, [field]: value } : option,
+      ),
+    );
+  }
 
   function getRequestConfig() {
     return token ? { headers: { Authorization: `Bearer ${token}` } } : {};
@@ -162,9 +266,15 @@ export default function OrganizerDashboard() {
       formData.append("location", location);
       formData.append("category", category);
       formData.append("description", description);
+      formData.append("capacity", capacity || "0");
       formData.append("permanentBookingPrice", permanentBookingPrice || "0");
+      formData.append(
+        "ticketOptions",
+        JSON.stringify(serializeTicketOptions(ticketOptions)),
+      );
       formData.append("currency", "INR");
       if (poster) formData.append("poster", poster);
+      else if (posterUrl) formData.append('posterUrl', posterUrl);
 
       const response = await axios.post("/api/events", formData, getRequestConfig());
       setTitle("");
@@ -172,8 +282,24 @@ export default function OrganizerDashboard() {
       setLocation("");
       setCategory("Tech");
       setDescription("");
+      setCapacity("0");
       setPermanentBookingPrice("0");
+      setTicketOptions([
+        createEmptyTicketOption(0, {
+          label: "Free Registration",
+          price: "0",
+          capacity: "0",
+          featured: false,
+        }),
+        createEmptyTicketOption(1, {
+          label: "Permanent Booking",
+          price: "199",
+          capacity: "0",
+          featured: true,
+        }),
+      ]);
       setPoster(null);
+      setPosterUrl('');
       await loadDashboardData();
       showToast(
         "success",
@@ -723,6 +849,24 @@ export default function OrganizerDashboard() {
 
           <div className="space-y-1">
             <label className="text-sm text-slate-600 dark:text-slate-300">
+              Total seats
+            </label>
+            <input
+              className="input w-full"
+              min="0"
+              placeholder="100"
+              step="1"
+              type="number"
+              value={capacity}
+              onChange={(event) => setCapacity(event.target.value)}
+            />
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              This is the total number of seats available for the event.
+            </p>
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-sm text-slate-600 dark:text-slate-300">
               Permanent booking price (INR)
             </label>
             <input
@@ -739,6 +883,188 @@ export default function OrganizerDashboard() {
             </p>
           </div>
 
+          <div className="space-y-3 rounded-2xl border border-slate-200 p-4 dark:border-slate-800">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <label className="text-sm text-slate-600 dark:text-slate-300">
+                  Ticket tiers
+                </label>
+                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                  Add free or paid ticket types and set a seat limit for each one.
+                </p>
+              </div>
+              <button
+                type="button"
+                className="btn-outline"
+                onClick={addTicketOption}
+              >
+                Add ticket tier
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              {ticketOptions.map((option, index) => (
+                <div
+                  key={`${option.key}-${index}`}
+                  className="space-y-4 rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div className="text-sm font-semibold text-slate-700 dark:text-slate-200">
+                      Ticket {index + 1}
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        className="btn-outline px-3 py-1.5 text-xs"
+                        onClick={() => moveTicketOption(index, -1)}
+                        disabled={index === 0}
+                      >
+                        Up
+                      </button>
+                      <button
+                        type="button"
+                        className="btn-outline px-3 py-1.5 text-xs"
+                        onClick={() => moveTicketOption(index, 1)}
+                        disabled={index === ticketOptions.length - 1}
+                      >
+                        Down
+                      </button>
+                      <button
+                        type="button"
+                        className="btn-outline px-3 py-1.5 text-xs"
+                        onClick={() => removeTicketOption(index)}
+                        disabled={ticketOptions.length === 1}
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <div className="space-y-1">
+                      <label className="text-xs font-medium text-slate-500 dark:text-slate-400">
+                        Label
+                      </label>
+                      <input
+                        className="input w-full"
+                        value={option.label}
+                        onChange={(event) =>
+                          updateTicketOption(index, "label", event.target.value)
+                        }
+                        placeholder="Free Registration"
+                        required
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-xs font-medium text-slate-500 dark:text-slate-400">
+                        Key
+                      </label>
+                      <input
+                        className="input w-full"
+                        value={option.key}
+                        onChange={(event) =>
+                          updateTicketOption(index, "key", event.target.value)
+                        }
+                        placeholder="free"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-xs font-medium text-slate-500 dark:text-slate-400">
+                        Price (INR)
+                      </label>
+                      <input
+                        className="input w-full"
+                        min="0"
+                        step="1"
+                        type="number"
+                        value={option.price}
+                        onChange={(event) =>
+                          updateTicketOption(index, "price", event.target.value)
+                        }
+                        placeholder="0"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-xs font-medium text-slate-500 dark:text-slate-400">
+                        Seats
+                      </label>
+                      <input
+                        className="input w-full"
+                        min="0"
+                        step="1"
+                        type="number"
+                        value={option.capacity}
+                        onChange={(event) =>
+                          updateTicketOption(index, "capacity", event.target.value)
+                        }
+                        placeholder="0"
+                      />
+                    </div>
+
+                    <div className="space-y-1 md:col-span-2">
+                      <label className="text-xs font-medium text-slate-500 dark:text-slate-400">
+                        Description
+                      </label>
+                      <textarea
+                        className="input min-h-[96px] w-full"
+                        rows="3"
+                        value={option.description}
+                        onChange={(event) =>
+                          updateTicketOption(index, "description", event.target.value)
+                        }
+                        placeholder="Explain who this ticket is for."
+                      />
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-4 md:col-span-2">
+                      <label className="inline-flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
+                        <input
+                          type="checkbox"
+                          checked={Boolean(option.featured)}
+                          onChange={(event) =>
+                            updateTicketOption(index, "featured", event.target.checked)
+                          }
+                        />
+                        Featured ticket
+                      </label>
+                      <label className="inline-flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
+                        <input
+                          type="checkbox"
+                          checked={option.active !== false}
+                          onChange={(event) =>
+                            updateTicketOption(index, "active", event.target.checked)
+                          }
+                        />
+                        Active
+                      </label>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="rounded-2xl bg-slate-100 px-4 py-3 text-sm text-slate-700 dark:bg-slate-900 dark:text-slate-200">
+              <div className="flex items-center justify-between gap-3">
+                <span>Configured ticket seats</span>
+                <span className="font-semibold">{configuredSeatCapacity}</span>
+              </div>
+              <div className="mt-1 flex items-center justify-between gap-3">
+                <span>Total event seats</span>
+                <span className="font-semibold">
+                  {eventCapacityValue > 0 ? eventCapacityValue : "Unlimited"}
+                </span>
+              </div>
+              {capacityMismatch ? (
+                <div className="mt-2 text-xs font-medium text-amber-700 dark:text-amber-300">
+                  Ticket seat totals exceed the event seat count. Lower the ticket capacities or raise the event capacity.
+                </div>
+              ) : null}
+            </div>
+          </div>
+
           <div className="space-y-1">
             <label className="text-sm text-slate-600 dark:text-slate-300">
               Poster
@@ -748,6 +1074,12 @@ export default function OrganizerDashboard() {
               type="file"
               onChange={(event) => setPoster(event.target.files?.[0] || null)}
             />
+            <input
+              className="input w-full mt-2"
+              placeholder="Or paste poster image URL"
+              value={posterUrl}
+              onChange={(e) => setPosterUrl(e.target.value)}
+            />
           </div>
 
           <div className="flex justify-end">
@@ -755,7 +1087,7 @@ export default function OrganizerDashboard() {
           </div>
         </form>
 
-        <div className="space-y-6">
+          <div className="space-y-6">
           <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
             <div className="mb-4">
               <h2 className="text-xl font-bold">Event Mix</h2>
@@ -818,6 +1150,12 @@ export default function OrganizerDashboard() {
                             className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] ${statusConfig.classes}`}
                           >
                             {statusConfig.label}
+                            {event.status === "pending" &&
+                            event.sentForApprovalAt ? (
+                              <span className="ml-2 inline-block rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
+                                Sent
+                              </span>
+                            ) : null}
                           </span>
                         </div>
                         <div className="text-sm text-slate-500 dark:text-slate-400">
@@ -839,6 +1177,14 @@ export default function OrganizerDashboard() {
                                 event.currency || "INR",
                               )
                             : "Disabled"}
+                        </div>
+                        <div className="text-sm text-slate-500 dark:text-slate-400">
+                          Seats: {Number(event.capacity || 0) > 0 ? event.capacity : "Unlimited"} | Ticket tiers:{" "}
+                          {Array.isArray(event.ticketOptions)
+                            ? event.ticketOptions.filter(
+                                (option) => option?.active !== false,
+                              ).length
+                            : 0}
                         </div>
                       </div>
 

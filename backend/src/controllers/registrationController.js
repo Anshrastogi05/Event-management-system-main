@@ -1,8 +1,11 @@
 import { randomBytes } from 'crypto';
 import { createObjectCsvWriter } from 'csv-writer';
+import fs from 'fs';
 import path from 'path';
+import { fileURLToPath } from 'url';
 import Event from '../models/Event.js';
 import Registration from '../models/Registration.js';
+import User from '../models/User.js';
 import { env } from '../config/env.js';
 import { sendEmail } from '../utils/email.js';
 import { generateQRCodeDataUrl } from '../utils/qrcode.js';
@@ -14,6 +17,9 @@ import {
 } from '../services/razorpay.js';
 
 const ACTIVE_REGISTRATION_STATUSES = ['registered', 'attended'];
+const OCCUPIED_REGISTRATION_STATUSES = ['pending_payment', 'registered', 'attended'];
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 function formatEventDate(dateValue) {
   const date = new Date(dateValue);
@@ -37,9 +43,143 @@ function normalizeCurrency(currency) {
   return (currency || 'INR').toUpperCase();
 }
 
-function getPermanentBookingPrice(event) {
-  const value = Number(event?.permanentBookingPrice || 0);
-  return Number.isFinite(value) && value > 0 ? value : 0;
+function normalizeTicketOptionKey(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
+function formatTicketOptionLabel(option) {
+  if (!option) return 'Registration';
+  return option.label || 'Registration';
+}
+
+function getConfiguredTicketOptions(event) {
+  const options = Array.isArray(event?.ticketOptions) ? event.ticketOptions : [];
+  return options
+    .map((option, index) => {
+      const label = String(option?.label || '').trim();
+      if (!label) return null;
+
+      const key = normalizeTicketOptionKey(option?.key || label || `ticket-${index + 1}`) || `ticket-${index + 1}`;
+      const price = Number(option?.price ?? 0);
+      const capacity = Number(option?.capacity ?? 0);
+
+      return {
+        key,
+        label,
+        description: String(option?.description || '').trim(),
+        price: Number.isFinite(price) && price >= 0 ? price : 0,
+        capacity: Number.isFinite(capacity) && capacity >= 0 ? capacity : 0,
+        active: option?.active !== false,
+        featured: Boolean(option?.featured),
+      };
+    })
+    .filter(Boolean)
+    .filter((option) => option.active);
+}
+
+function getDefaultTicketOptions(event) {
+  const freeOption = {
+    key: 'free',
+    label: 'Free Registration',
+    description: 'Register instantly without making a payment.',
+    price: 0,
+    capacity: Number(event?.capacity || 0),
+    active: true,
+    featured: true,
+  };
+
+  const paidPrice = getPermanentBookingPrice(event);
+  const paidOption = paidPrice > 0
+    ? {
+        key: 'permanent',
+        label: 'Permanent Booking',
+        description: 'Secure your spot with payment and receive a permanent booking reference.',
+        price: paidPrice,
+        capacity: Number(event?.capacity || 0),
+        active: true,
+        featured: true,
+      }
+    : null;
+
+  return paidOption ? [paidOption, freeOption] : [freeOption];
+}
+
+function getEventTicketOptions(event) {
+  const configured = getConfiguredTicketOptions(event);
+  return configured.length ? configured : getDefaultTicketOptions(event);
+}
+
+function resolveTicketOption(event, requestedKey = '') {
+  const options = getEventTicketOptions(event);
+  const normalizedKey = normalizeTicketOptionKey(requestedKey);
+
+  if (normalizedKey) {
+    const directMatch = options.find((option) => option.key === normalizedKey);
+    if (directMatch) return directMatch;
+  }
+
+  if (!normalizedKey && options.length === 1) {
+    return options[0];
+  }
+
+  const freeMatch = options.find((option) => option.price <= 0 || option.key === 'free');
+  if (freeMatch && (!normalizedKey || normalizedKey === 'free')) return freeMatch;
+
+  const paidMatch = options.find((option) => option.price > 0 || option.key === 'permanent');
+  if (paidMatch && normalizedKey === 'permanent') return paidMatch;
+
+  return options[0] || null;
+}
+
+async function countOccupiedRegistrations(eventId, ticketOptionKey = null) {
+  const filter = {
+    event: eventId,
+    status: { $in: OCCUPIED_REGISTRATION_STATUSES },
+  };
+
+  if (ticketOptionKey) {
+    filter.ticketOptionKey = ticketOptionKey;
+  }
+
+  return Registration.countDocuments(filter);
+}
+
+function createTicketAvailabilityError(message) {
+  const error = new Error(message);
+  error.status = 400;
+  return error;
+}
+
+function applyTicketOptionToRegistration(registration, event, ticketOption) {
+  const previousBookingType = registration.bookingType;
+  const previousTicketOptionKey = registration.ticketOptionKey;
+  const bookingType = ticketOption.price > 0 ? 'permanent' : 'free';
+
+  registration.bookingType = bookingType;
+  registration.ticketOptionKey = ticketOption.key;
+  registration.ticketOptionLabel = ticketOption.label;
+  registration.bookingReference =
+    !registration.bookingReference ||
+    previousBookingType !== bookingType ||
+    previousTicketOptionKey !== ticketOption.key
+      ? generateBookingReference(bookingType)
+      : registration.bookingReference;
+  registration.amount = Number(ticketOption.price || 0);
+  registration.currency = normalizeCurrency(event.currency);
+  registration.paymentProvider = 'razorpay';
+  registration.razorpayOrderId = undefined;
+  registration.razorpayPaymentId = undefined;
+  registration.razorpaySignature = undefined;
+  registration.paidAt = undefined;
+  registration.refundAmount = 0;
+  registration.refundStatus = 'none';
+  registration.refundReference = undefined;
+  registration.refundedAt = undefined;
+  registration.checkedInAt = undefined;
 }
 
 function formatCurrency(amount, currency = 'INR') {
@@ -48,6 +188,11 @@ function formatCurrency(amount, currency = 'INR') {
     currency: normalizeCurrency(currency),
     maximumFractionDigits: 2,
   }).format(amount || 0);
+}
+
+function getPermanentBookingPrice(event) {
+  const value = Number(event?.permanentBookingPrice || 0);
+  return Number.isFinite(value) && value > 0 ? value : 0;
 }
 
 function generateBookingReference(bookingType) {
@@ -65,7 +210,9 @@ async function findManageableEvent(eventId, user) {
 }
 
 function buildRegistrationEmail(user, event, registration) {
-  const bookingLabel = getBookingLabel(registration?.bookingType || 'free');
+  const bookingLabel =
+    registration?.ticketOptionLabel ||
+    getBookingLabel(registration?.bookingType || 'free');
   const bookingReference = registration?.bookingReference || 'Will be assigned at confirmation';
   const eventDate = formatEventDate(event.date);
   const eventLocation = event.location || 'To be announced';
@@ -126,11 +273,95 @@ function buildRegistrationEmail(user, event, registration) {
   };
 }
 
+export function buildRegistrationReminderEmail(user, event, registration) {
+  const bookingLabel =
+    registration?.ticketOptionLabel ||
+    getBookingLabel(registration?.bookingType || 'free');
+  const eventDate = formatEventDate(event.date);
+  const eventLocation = event.location || 'To be announced';
+  const eventUrl = `${env.clientUrl.replace(/\/$/, '')}/events/${event._id}`;
+
+  return {
+    subject: `Reminder: ${event.title} starts soon`,
+    text: [
+      `Hi ${user?.name || 'there'},`,
+      '',
+      `This is a reminder that "${event.title}" is starting within the next 24 hours.`,
+      `Booking type: ${bookingLabel}`,
+      `Reference: ${registration.bookingReference || 'Assigned automatically'}`,
+      `Date: ${eventDate}`,
+      `Location: ${eventLocation}`,
+      `View event details: ${eventUrl}`,
+      '',
+      'See you there.',
+      '',
+      'EventManager Team',
+    ].join('\n'),
+    html: `
+      <div style="font-family: Arial, sans-serif; background: #f8fafc; padding: 24px; color: #0f172a;">
+        <div style="max-width: 640px; margin: 0 auto; background: #ffffff; border-radius: 18px; padding: 32px; border: 1px solid #e2e8f0;">
+          <div style="font-size: 12px; letter-spacing: 0.2em; text-transform: uppercase; color: #64748b; margin-bottom: 12px;">Event Reminder</div>
+          <h1 style="margin: 0 0 12px; font-size: 28px; line-height: 1.2;">${event.title}</h1>
+          <p style="margin: 0 0 20px; font-size: 16px; line-height: 1.6;">Hi ${user?.name || 'there'}, your event is coming up soon. We sent this reminder because you are registered for the event.</p>
+
+          <div style="border-radius: 16px; background: #eff6ff; padding: 20px; margin-bottom: 20px;">
+            <div style="margin-bottom: 8px;"><strong>Ticket:</strong> ${bookingLabel}</div>
+            <div style="margin-bottom: 8px;"><strong>Reference:</strong> ${registration.bookingReference || 'Assigned automatically'}</div>
+            <div style="margin-bottom: 8px;"><strong>Date:</strong> ${eventDate}</div>
+            <div><strong>Location:</strong> ${eventLocation}</div>
+          </div>
+
+          <a href="${eventUrl}" style="display: inline-block; background: #2563eb; color: #ffffff; text-decoration: none; padding: 12px 20px; border-radius: 999px; font-weight: 600;">
+            Open Event Page
+          </a>
+        </div>
+      </div>
+    `,
+  };
+}
+
+function buildRegistrationCancellationEmail(user, event, registration, refundAmount) {
+  return {
+    subject: `Registration cancelled: ${event.title}`,
+    text: [
+      `Hi ${user?.name || 'there'},`,
+      '',
+      `Your registration for "${event.title}" has been cancelled.`,
+      `Booking type: ${getBookingLabel(registration.bookingType || 'free')}`,
+      `Reference: ${registration.bookingReference || 'Will be assigned at confirmation'}`,
+      refundAmount > 0
+        ? `Refund credited: ${formatCurrency(refundAmount, registration.currency)}`
+        : 'Refund credited: No payment refund was due for this cancellation.',
+      '',
+      'EventManager Team',
+    ].join('\n'),
+    html: `
+      <div style="font-family: Arial, sans-serif; background: #f8fafc; padding: 24px; color: #0f172a;">
+        <div style="max-width: 640px; margin: 0 auto; background: #ffffff; border-radius: 18px; padding: 32px; border: 1px solid #e2e8f0;">
+          <div style="font-size: 12px; letter-spacing: 0.2em; text-transform: uppercase; color: #64748b; margin-bottom: 12px;">Registration Cancelled</div>
+          <h1 style="margin: 0 0 12px; font-size: 28px; line-height: 1.2;">${event.title}</h1>
+          <p style="margin: 0 0 20px; font-size: 16px; line-height: 1.6;">Hi ${user?.name || 'there'}, your registration has been cancelled successfully.</p>
+
+          <div style="border-radius: 16px; background: #eff6ff; padding: 20px; margin-bottom: 20px;">
+            <div style="margin-bottom: 8px;"><strong>Booking type:</strong> ${getBookingLabel(registration.bookingType || 'free')}</div>
+            <div style="margin-bottom: 8px;"><strong>Reference:</strong> ${registration.bookingReference || 'Will be assigned at confirmation'}</div>
+            <div><strong>Refund status:</strong> ${refundAmount > 0 ? formatCurrency(refundAmount, registration.currency) : 'No payment refund was due'}</div>
+          </div>
+
+          <p style="margin: 24px 0 0; font-size: 14px; color: #475569;">${refundAmount > 0 ? 'The refund has been credited to your account wallet.' : 'This cancellation did not require a payment refund.'}</p>
+        </div>
+      </div>
+    `,
+  };
+}
+
 async function finalizeRegistration({ registration, event, user }) {
   const payload = JSON.stringify({
     userId: registration.user,
     eventId: event._id,
     bookingType: registration.bookingType,
+    ticketOptionKey: registration.ticketOptionKey || null,
+    ticketOptionLabel: registration.ticketOptionLabel || null,
     bookingReference: registration.bookingReference,
     paidAt: registration.paidAt || null,
     at: Date.now(),
@@ -168,9 +399,81 @@ function serializeRegistration(registrationDoc) {
     paidAt: registration.paidAt,
     qrCodeDataUrl: registration.qrCodeDataUrl,
     checkedInAt: registration.checkedInAt,
+    refundAmount: registration.refundAmount || 0,
+    refundStatus: registration.refundStatus || 'none',
+    refundReference: registration.refundReference || null,
+    refundedAt: registration.refundedAt || null,
+    reminderSentAt: registration.reminderSentAt || null,
     createdAt: registration.createdAt,
   };
 }
+
+export const cancelRegistration = async (req, res) => {
+  try {
+    const registration = await Registration.findOne({
+      _id: req.params.registrationId,
+      user: req.user.id,
+    }).populate('event');
+
+    if (!registration) return res.status(404).json({ message: 'Registration booking not found' });
+    if (!registration.event || registration.event.status !== 'approved') {
+      return res.status(400).json({ message: 'Event not available' });
+    }
+    if (registration.status === 'cancelled') {
+      return res.status(400).json({ message: 'This booking has already been cancelled.' });
+    }
+    if (registration.status !== 'registered') {
+      return res.status(400).json({ message: 'Only active registrations can be cancelled.' });
+    }
+    if (registration.checkedInAt) {
+      return res.status(400).json({ message: 'Checked-in registrations cannot be cancelled.' });
+    }
+
+    const refundAmount = registration.bookingType === 'permanent' ? Number(registration.amount || 0) : 0;
+    registration.status = 'cancelled';
+    registration.qrCodeDataUrl = undefined;
+    registration.checkedInAt = undefined;
+    registration.refundAmount = refundAmount;
+    registration.refundStatus = refundAmount > 0 ? 'credited' : 'not_required';
+    registration.refundReference =
+      refundAmount > 0
+        ? `RFD-${Date.now().toString(36).toUpperCase()}-${randomBytes(3).toString('hex').toUpperCase()}`
+        : undefined;
+    registration.refundedAt = refundAmount > 0 ? new Date() : undefined;
+    await registration.save();
+
+    let updatedUser = null;
+    if (refundAmount > 0) {
+      updatedUser = await User.findByIdAndUpdate(
+        req.user.id,
+        { $inc: { walletBalance: refundAmount } },
+        { new: true }
+      ).select('walletBalance');
+    }
+
+    try {
+      if (req.user.email) {
+        const emailContent = buildRegistrationCancellationEmail(
+          req.user,
+          registration.event,
+          registration,
+          refundAmount,
+        );
+        await sendEmail({ to: req.user.email, ...emailContent });
+      }
+    } catch (emailErr) {
+      console.error(`Failed to send registration cancellation email to ${req.user.email}: ${emailErr.message}`);
+    }
+
+    res.json({
+      registration: serializeRegistration(registration),
+      walletBalance: updatedUser?.walletBalance ?? null,
+      refundAmount,
+    });
+  } catch (err) {
+    res.status(err.status || 500).json({ message: err.message });
+  }
+};
 
 async function findEventForBooking(eventId) {
   const event = await Event.findById(eventId);
@@ -183,18 +486,30 @@ export const registerForEvent = async (req, res) => {
     const event = await findEventForBooking(req.params.id);
     if (!event) return res.status(400).json({ message: 'Event not available' });
 
-    const bookingType = req.body?.bookingType || 'free';
-    if (!['free', 'permanent'].includes(bookingType)) {
-      return res.status(400).json({ message: 'Invalid booking type' });
+    const requestedKey = req.body?.ticketOptionKey || req.body?.bookingType || 'free';
+    const ticketOption = resolveTicketOption(event, requestedKey);
+    if (!ticketOption) {
+      return res.status(400).json({ message: 'Invalid ticket option' });
     }
-
-    if (bookingType === 'permanent') {
-      return res.status(400).json({ message: 'Permanent booking requires payment. Start the Razorpay flow first.' });
+    if (ticketOption.price > 0) {
+      return res.status(400).json({ message: 'Paid ticket options require payment. Start the Razorpay flow first.' });
     }
 
     const existingRegistration = await Registration.findOne({ user: req.user.id, event: event._id });
     if (existingRegistration && ACTIVE_REGISTRATION_STATUSES.includes(existingRegistration.status)) {
       return res.status(409).json({ message: 'You are already registered for this event' });
+    }
+
+    const occupiedCount = await countOccupiedRegistrations(event._id);
+    if (event.capacity > 0 && occupiedCount >= Number(event.capacity || 0)) {
+      return res.status(400).json({ message: 'This event has reached its capacity.' });
+    }
+
+    if (ticketOption.capacity > 0) {
+      const optionCount = await countOccupiedRegistrations(event._id, ticketOption.key);
+      if (optionCount >= ticketOption.capacity) {
+        return res.status(400).json({ message: `The ${ticketOption.label} ticket option is sold out.` });
+      }
     }
 
     const registration =
@@ -204,19 +519,7 @@ export const registerForEvent = async (req, res) => {
         event: event._id,
       });
 
-    const previousBookingType = registration.bookingType;
-    registration.bookingType = 'free';
-    registration.bookingReference =
-      !registration.bookingReference || previousBookingType !== 'free'
-        ? generateBookingReference('free')
-        : registration.bookingReference;
-    registration.amount = 0;
-    registration.currency = normalizeCurrency(event.currency);
-    registration.paymentProvider = 'razorpay';
-    registration.razorpayOrderId = undefined;
-    registration.razorpayPaymentId = undefined;
-    registration.razorpaySignature = undefined;
-    registration.paidAt = undefined;
+    applyTicketOptionToRegistration(registration, event, ticketOption);
 
     await finalizeRegistration({
       registration,
@@ -235,15 +538,31 @@ export const createRegistrationPaymentOrder = async (req, res) => {
     const event = await findEventForBooking(req.params.id);
     if (!event) return res.status(400).json({ message: 'Event not available' });
 
-    const amount = getPermanentBookingPrice(event);
-    if (!amount) {
-      return res.status(400).json({ message: 'Permanent booking is not configured for this event.' });
+    const requestedKey = req.body?.ticketOptionKey || req.body?.bookingType || 'permanent';
+    const ticketOption = resolveTicketOption(event, requestedKey);
+    if (!ticketOption) {
+      return res.status(400).json({ message: 'Invalid ticket option' });
+    }
+    if (ticketOption.price <= 0) {
+      return res.status(400).json({ message: 'This ticket option does not require payment. Use regular registration instead.' });
     }
 
     const currency = normalizeCurrency(event.currency);
     const existingRegistration = await Registration.findOne({ user: req.user.id, event: event._id });
     if (existingRegistration && ACTIVE_REGISTRATION_STATUSES.includes(existingRegistration.status)) {
       return res.status(409).json({ message: 'You are already registered for this event' });
+    }
+
+    const occupiedCount = await countOccupiedRegistrations(event._id);
+    if (event.capacity > 0 && occupiedCount >= Number(event.capacity || 0)) {
+      return res.status(400).json({ message: 'This event has reached its capacity.' });
+    }
+
+    if (ticketOption.capacity > 0) {
+      const optionCount = await countOccupiedRegistrations(event._id, ticketOption.key);
+      if (optionCount >= ticketOption.capacity) {
+        return res.status(400).json({ message: `The ${ticketOption.label} ticket option is sold out.` });
+      }
     }
 
     const registration =
@@ -253,23 +572,15 @@ export const createRegistrationPaymentOrder = async (req, res) => {
         event: event._id,
       });
 
-    const previousBookingType = registration.bookingType;
-    registration.bookingType = 'permanent';
-    registration.bookingReference =
-      !registration.bookingReference || previousBookingType !== 'permanent'
-        ? generateBookingReference('permanent')
-        : registration.bookingReference;
-    registration.amount = amount;
+    applyTicketOptionToRegistration(registration, event, ticketOption);
     registration.currency = currency;
     registration.status = 'pending_payment';
     registration.paymentProvider = 'razorpay';
     registration.qrCodeDataUrl = undefined;
     registration.paidAt = undefined;
-    registration.razorpayPaymentId = undefined;
-    registration.razorpaySignature = undefined;
 
     const order = await createRazorpayOrder({
-      amount: Math.round(amount * 100),
+      amount: Math.round(ticketOption.price * 100),
       currency,
       receipt: registration.bookingReference,
       notes: {
@@ -535,7 +846,7 @@ export const exportParticipantsCsv = async (req, res) => {
       registeredAt: registration.createdAt,
     }));
 
-    const filePath = path.join(process.cwd(), `participants-${req.params.id}.csv`);
+    const filePath = path.resolve(__dirname, `../../participants-${req.params.id}.csv`);
     const csvWriter = createObjectCsvWriter({
       path: filePath,
       header: [
@@ -550,7 +861,12 @@ export const exportParticipantsCsv = async (req, res) => {
     });
 
     await csvWriter.writeRecords(rows);
-    res.download(filePath);
+    res.download(filePath, err => {
+      if (err) {
+        console.error('Failed to send participants CSV:', err.message);
+      }
+      fs.promises.unlink(filePath).catch(() => {});
+    });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }

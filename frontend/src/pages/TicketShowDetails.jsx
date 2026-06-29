@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import axios from 'axios';
 import { io } from 'socket.io-client';
@@ -193,12 +193,12 @@ function groupSeatsBySection(seats = []) {
       return {
         name: section.name,
         price: section.price,
-        firstRowLabel: rows[0]?.rowLabel || '',
         rows,
       };
     })
-    .sort((left, right) => compareRowLabels(left.firstRowLabel, right.firstRowLabel))
-    .map(({ firstRowLabel, ...section }) => section);
+    .sort((left, right) =>
+      compareRowLabels(left.rows[0]?.rowLabel || '', right.rows[0]?.rowLabel || '')
+    );
 }
 
 function buildSeatBreakdown(seats = []) {
@@ -284,6 +284,7 @@ export default function TicketShowDetails() {
   const [paidBookings, setPaidBookings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [cancellingBookingId, setCancellingBookingId] = useState(null);
   const [toast, setToast] = useState({ open: false, type: 'info', message: '' });
   const [now, setNow] = useState(Date.now());
   const toastTimerRef = useRef(null);
@@ -296,14 +297,14 @@ export default function TicketShowDetails() {
     }, 4000);
   };
 
-  async function loadShow() {
+  const loadShow = useCallback(async () => {
     const response = await axios.get(`/api/tickets/shows/${id}`);
     setShow(response.data.show);
     setSeatSnapshot(response.data.seatSnapshot);
     return response.data.show;
-  }
+  }, [id]);
 
-  async function loadRelatedShows(sourceShow) {
+  const loadRelatedShows = useCallback(async (sourceShow) => {
     if (!sourceShow?.title || !sourceShow?.type) {
       setRelatedShows(sourceShow ? [sourceShow] : []);
       return;
@@ -344,9 +345,9 @@ export default function TicketShowDetails() {
     setRelatedShows(
       dedupeShows(collectedShows).sort((left, right) => new Date(left.date) - new Date(right.date))
     );
-  }
+  }, []);
 
-  async function loadMyBookings() {
+  const loadMyBookings = useCallback(async () => {
     if (!user) {
       setActiveBooking(null);
       setPaidBookings([]);
@@ -363,7 +364,7 @@ export default function TicketShowDetails() {
     const bookings = response.data.bookings || [];
     setActiveBooking(bookings.find((booking) => ['held', 'pending_payment'].includes(booking.status)) || null);
     setPaidBookings(bookings.filter((booking) => booking.status === 'paid'));
-  }
+  }, [id, user]);
 
   useEffect(() => {
     let mounted = true;
@@ -388,7 +389,7 @@ export default function TicketShowDetails() {
     return () => {
       mounted = false;
     };
-  }, [id, user]);
+  }, [id, user, loadShow, loadMyBookings, loadRelatedShows]);
 
   useEffect(() => {
     if (!activeBooking) return;
@@ -632,6 +633,20 @@ export default function TicketShowDetails() {
       await refreshBookingState();
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  async function cancelPaidBooking(bookingId) {
+    setCancellingBookingId(bookingId);
+    try {
+      await axios.post(`/api/tickets/bookings/${bookingId}/cancel`);
+      showToast('success', 'Booking cancelled. Your refund has been credited to your wallet.');
+      await refreshBookingState();
+      await loadShow();
+    } catch (error) {
+      showToast('error', error.response?.data?.message || 'Unable to cancel this booking.');
+    } finally {
+      setCancellingBookingId(null);
     }
   }
 
@@ -1150,6 +1165,21 @@ export default function TicketShowDetails() {
                     </div>
                     <div className="mt-3 text-sm text-slate-300">
                       Amount paid: {formatCurrency(booking.amount, booking.currency)}
+                    </div>
+                    <div className="mt-4 flex flex-wrap gap-3">
+                      <button
+                        type="button"
+                        onClick={() => cancelPaidBooking(booking._id)}
+                        disabled={cancellingBookingId === booking._id}
+                        className="rounded-2xl bg-rose-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-rose-700 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {cancellingBookingId === booking._id ? 'Cancelling...' : 'Cancel Ticket'}
+                      </button>
+                      {booking.refundReference ? (
+                        <div className="rounded-2xl bg-emerald-400/15 px-4 py-2.5 text-sm font-semibold text-emerald-200">
+                          Refund ref: {booking.refundReference}
+                        </div>
+                      ) : null}
                     </div>
                   </div>
                 ))}

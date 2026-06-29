@@ -1,9 +1,12 @@
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
+import { fileURLToPath } from 'url';
 import { uploadImageBuffer, isCloudinaryConfigured } from '../services/cloudinary.js';
 
-const uploadsDir = path.resolve(process.cwd(), 'uploads');
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const uploadsDir = path.resolve(__dirname, '../../uploads');
 if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
 }

@@ -18,6 +18,14 @@ function formatCurrency(amount, currency = "INR") {
   }).format(amount || 0);
 }
 
+function normalizeTicketOptionKey(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
 function openRazorpayCheckout({ event, order, keyId, registration, user }) {
   return new Promise((resolve, reject) => {
     if (!window.Razorpay) {
@@ -116,8 +124,18 @@ export default function BookingPage() {
       const nextEvent = response.data.event;
       setEvent(nextEvent);
 
-      const paidEnabled = Number(nextEvent?.permanentBookingPrice || 0) > 0;
-      setSelectedOption(paidEnabled ? "permanent" : "free");
+      const configuredOptions = Array.isArray(nextEvent?.ticketOptions)
+        ? nextEvent.ticketOptions.filter((option) => option?.active !== false && option?.label)
+        : [];
+
+      if (configuredOptions.length > 0) {
+        const featuredOption =
+          configuredOptions.find((option) => option?.featured) || configuredOptions[0];
+        setSelectedOption(normalizeTicketOptionKey(featuredOption?.key || featuredOption?.label));
+      } else {
+        const paidEnabled = Number(nextEvent?.permanentBookingPrice || 0) > 0;
+        setSelectedOption(paidEnabled ? "permanent" : "free");
+      }
     } catch (error) {
       const message =
         error.response?.data?.message || "Unable to load booking details.";
@@ -133,43 +151,83 @@ export default function BookingPage() {
   const isPermanentBookingAvailable = permanentBookingPrice > 0;
   const isEventApproved = event?.status === "approved";
   const bookingOptions = useMemo(
-    () => [
-      {
-        id: "permanent",
-        title: "Permanent Booking",
-        description: isPermanentBookingAvailable
-          ? `Secure your seat through Razorpay and receive a paid booking confirmation with a permanent reference.`
-          : "Permanent booking is currently unavailable for this event.",
-        badge: isPermanentBookingAvailable ? "Secure Payment" : "Unavailable",
-        disabled: !isPermanentBookingAvailable,
-        priceLabel: isPermanentBookingAvailable
-          ? formatCurrency(permanentBookingPrice, event?.currency || "INR")
-          : "Not enabled",
-      },
-      {
-        id: "free",
-        title: "Free Registration",
-        description:
-          "Complete the quick free registration flow and receive an email confirmation right away.",
-        badge: "Quick Access",
-        disabled: false,
-        priceLabel: "Free",
-      },
-    ],
-    [event?.currency, isPermanentBookingAvailable, permanentBookingPrice],
+    () => {
+      const configuredOptions = Array.isArray(event?.ticketOptions)
+        ? event.ticketOptions
+            .filter((option) => option?.active !== false && option?.label)
+            .map((option) => {
+              const key = normalizeTicketOptionKey(option?.key || option?.label);
+              const availability = event?.ticketAvailability?.[key] || {};
+              const price = Number(option?.price || 0);
+              return {
+                id: key,
+                title: option.label,
+                description:
+                  option.description ||
+                  (price > 0
+                    ? "Secure your spot with payment and receive a permanent booking reference."
+                    : "Complete registration instantly and receive an email confirmation."),
+                badge: option.featured ? "Featured Ticket" : price > 0 ? "Paid Ticket" : "Free Ticket",
+                disabled:
+                  (Number.isFinite(availability.remaining) && availability.remaining === 0) ||
+                  (!isEventApproved && price > 0),
+                price,
+                priceLabel:
+                  price > 0 ? formatCurrency(price, event?.currency || "INR") : "Free",
+                remaining:
+                  Number.isFinite(availability.remaining) || availability.remaining === 0
+                    ? availability.remaining
+                    : null,
+              };
+            })
+        : [];
+
+      if (configuredOptions.length > 0) {
+        return configuredOptions;
+      }
+
+      return [
+        {
+          id: "permanent",
+          title: "Permanent Booking",
+          description: isPermanentBookingAvailable
+            ? `Secure your seat through Razorpay and receive a paid booking confirmation with a permanent reference.`
+            : "Permanent booking is currently unavailable for this event.",
+          badge: isPermanentBookingAvailable ? "Secure Payment" : "Unavailable",
+          disabled: !isPermanentBookingAvailable,
+          price: permanentBookingPrice,
+          priceLabel: isPermanentBookingAvailable
+            ? formatCurrency(permanentBookingPrice, event?.currency || "INR")
+            : "Not enabled",
+          remaining: Number(event?.capacity || 0) > 0 ? Number(event.capacity || 0) : null,
+        },
+        {
+          id: "free",
+          title: "Free Registration",
+          description:
+            "Complete the quick free registration flow and receive an email confirmation right away.",
+          badge: "Quick Access",
+          disabled: false,
+          price: 0,
+          priceLabel: "Free",
+          remaining: Number(event?.capacity || 0) > 0 ? Number(event.capacity || 0) : null,
+        },
+      ];
+    },
+    [event, isEventApproved, isPermanentBookingAvailable, permanentBookingPrice],
   );
 
   const selectedDetails =
     bookingOptions.find((option) => option.id === selectedOption) ||
     bookingOptions[0];
 
-  async function confirmFreeRegistration() {
+  async function confirmFreeRegistration(ticketOptionKey) {
     await axios.post(`/api/registrations/${id}/register`, {
-      bookingType: "free",
+      ticketOptionKey,
     });
   }
 
-  async function confirmPaidBooking() {
+  async function confirmPaidBooking(ticketOptionKey) {
     const scriptReady = await loadRazorpayCheckout();
     if (!scriptReady) {
       throw new Error("Unable to load Razorpay checkout right now.");
@@ -177,6 +235,7 @@ export default function BookingPage() {
 
     const createOrderResponse = await axios.post(
       `/api/registrations/${id}/create-order`,
+      { ticketOptionKey },
     );
     const { keyId, order, registration } = createOrderResponse.data;
     const paymentResult = await openRazorpayCheckout({
@@ -203,27 +262,26 @@ export default function BookingPage() {
       return;
     }
 
-    if (selectedOption === "permanent" && !isPermanentBookingAvailable) {
-      showToast(
-        "info",
-        "Permanent booking is not configured for this event yet.",
-      );
-      return;
-    }
-
     setSubmitting(true);
     try {
-      if (selectedOption === "permanent") {
-        await confirmPaidBooking();
+      const selectedOptionData =
+        bookingOptions.find((option) => option.id === selectedOption) ||
+        bookingOptions[0];
+      if (!selectedOptionData) {
+        throw new Error("No ticket option is available for this event.");
+      }
+
+      if (selectedOptionData.price > 0) {
+        await confirmPaidBooking(selectedOptionData.id);
         showToast(
           "success",
-          `Payment received. ${getBookingLabel(selectedOption)} completed successfully.`,
+          `Payment received. ${selectedOptionData.title} completed successfully.`,
         );
       } else {
-        await confirmFreeRegistration();
+        await confirmFreeRegistration(selectedOptionData.id);
         showToast(
           "success",
-          `${getBookingLabel(selectedOption)} completed. Check your email for confirmation.`,
+          `${selectedOptionData.title} completed. Check your email for confirmation.`,
         );
       }
 
@@ -294,7 +352,7 @@ export default function BookingPage() {
       ) : null}
 
       <div className="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
-        <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+      <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
           <div className="mb-4">
             <div className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500 dark:text-slate-400">
               Booking Page
@@ -303,8 +361,7 @@ export default function BookingPage() {
               Choose Your Registration Type
             </h1>
             <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
-              Free registration stays instant. Permanent booking now uses
-              Razorpay for secure payment before the pass is issued.
+              Free registration stays instant. Paid tickets use Razorpay for secure payment before the pass is issued.
             </p>
             {!isEventApproved ? (
               <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
@@ -344,6 +401,11 @@ export default function BookingPage() {
                   <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
                     {option.description}
                   </p>
+                  <div className="mt-3 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                    {option.remaining === null
+                      ? "Unlimited seats"
+                      : `${option.remaining} seat${option.remaining === 1 ? "" : "s"} left`}
+                  </div>
                 </button>
               );
             })}
@@ -361,7 +423,7 @@ export default function BookingPage() {
               </div>
               <div className="rounded-2xl bg-white px-4 py-3 text-right shadow-sm dark:bg-slate-900">
                 <div className="text-xs uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">
-                  Payable
+                  Ticket price
                 </div>
                 <div className="mt-1 text-lg font-bold text-slate-900 dark:text-slate-100">
                   {selectedDetails.priceLabel}
@@ -378,10 +440,10 @@ export default function BookingPage() {
                 {!isEventApproved
                   ? "Waiting for Approval"
                   : submitting
-                  ? selectedOption === "permanent"
+                  ? selectedDetails.price > 0
                     ? "Opening payment..."
                     : "Processing..."
-                  : selectedOption === "permanent"
+                  : selectedDetails.price > 0
                     ? `Pay ${selectedDetails.priceLabel}`
                     : `Confirm ${selectedDetails.title}`}
               </button>
@@ -433,6 +495,14 @@ export default function BookingPage() {
                       event.currency || "INR",
                     )
                   : "Not available for this event"}
+              </div>
+            </div>
+            <div className="rounded-2xl border border-slate-200 px-4 py-3 dark:border-slate-800">
+              <div className="font-semibold">Event capacity</div>
+              <div className="mt-1 text-slate-500 dark:text-slate-400">
+                {Number(event?.capacity || 0) > 0
+                  ? `${event.capacity} seats`
+                  : "Unlimited / not set"}
               </div>
             </div>
           </div>

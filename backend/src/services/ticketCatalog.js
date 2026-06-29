@@ -81,15 +81,15 @@ function findSeatSectionConfigs(seats = []) {
     const rowComparison = compareRowLabels(left.row, right.row);
     if (rowComparison !== 0) return rowComparison;
     if (left.number !== right.number) return left.number - right.number;
-    return String(left.section || "").localeCompare(String(right.section || ""));
+    return String(left.section || "").localeCompare(
+      String(right.section || ""),
+    );
   })) {
-    const current =
-      sections.get(seat.section) ||
-      {
-        name: seat.section,
-        price: seat.price,
-        rows: new Map(),
-      };
+    const current = sections.get(seat.section) || {
+      name: seat.section,
+      price: seat.price,
+      rows: new Map(),
+    };
 
     const rowSeats = current.rows.get(seat.row) || [];
     rowSeats.push(seat);
@@ -162,7 +162,9 @@ async function ensureScreenRecord({ theater, screenName }) {
 }
 
 async function ensureSeatsForScreen(screen, seatSections) {
-  const existingSeats = await Seat.countDocuments({ screen_id: screen.screen_id });
+  const existingSeats = await Seat.countDocuments({
+    screen_id: screen.screen_id,
+  });
   if (existingSeats > 0) return;
 
   const expandedSeats = expandSeatLayout(seatSections);
@@ -198,16 +200,40 @@ async function createShowRecord({
     existingShow.currency = currency || existingShow.currency;
     existingShow.featured = featured;
     await existingShow.save();
+    try {
+      // index updated show
+      const { indexShow } = await import("./search.js");
+      await indexShow(existingShow);
+    } catch (e) {
+      // ignore
+    }
     return existingShow;
   }
 
-  return Show.create({
+  const created = await Show.create({
     movie_id: movie.movie_id,
     screen_id: screen.screen_id,
     date,
     currency,
     featured,
   });
+
+  try {
+    const { indexShow } = await import("./search.js");
+    await indexShow({
+      ...created.toObject(),
+      title: movie.title,
+      venue: screen.name,
+      city: screen && screen.theater_id ? undefined : undefined,
+      posterUrl: movie.posterUrl || null,
+      language: movie.language,
+      tags: movie.tags || [],
+    });
+  } catch (e) {
+    // ignore
+  }
+
+  return created;
 }
 
 export async function createMovieShowCatalogEntry({

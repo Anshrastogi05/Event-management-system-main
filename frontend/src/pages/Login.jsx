@@ -21,6 +21,7 @@ export default function Login() {
         const query = new URLSearchParams({
           email: res.data.email || email,
           purpose: res.data.purpose || 'login',
+          ...(res.data.otpCode ? { otp: res.data.otpCode } : {}),
           ...(res.data.expiresAt ? { expiresAt: res.data.expiresAt } : {}),
           ...(res.data.resendAvailableAt
             ? { resendAvailableAt: res.data.resendAvailableAt }

@@ -194,8 +194,13 @@ export default function EventDetails() {
         <div>
           <h1 className="text-2xl font-bold">{event.title}</h1>
           {event.status !== 'approved' ? (
-            <div className="mt-3 inline-flex rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-amber-700 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-300">
-              Waiting for admin approval
+            <div className="mt-3 inline-flex items-center gap-2">
+              <div className="inline-flex rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-amber-700 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-300">
+                Waiting for admin approval
+              </div>
+              {event.sentForApprovalAt ? (
+                <div className="inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">Sent</div>
+              ) : null}
             </div>
           ) : null}
           <p className="mt-2 text-slate-700 dark:text-slate-300">{event.description}</p>

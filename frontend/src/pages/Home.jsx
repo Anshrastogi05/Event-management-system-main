@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import axios from 'axios';
 import useSocket from '../hooks/useSocket.js';
+import useDebouncedValue from '../hooks/useDebouncedValue.js';
 import { useAuth } from '../context/AuthContext.jsx';
 
 export default function Home() {
@@ -15,23 +16,16 @@ export default function Home() {
   const categories = ['All','Tech','Sports','Cultural','Workshop'];
   const { announcements } = useSocket();
   const { user, token } = useAuth();
+  const [landingConfig, setLandingConfig] = useState(null);
+  const debouncedQ = useDebouncedValue(q, 300);
+  const hasMountedRef = useRef(false);
 
-  useEffect(() => {
-    fetchEvents();
-    fetchDashboard();
-  }, []);
-
-  useEffect(() => {
-    if (user && token) fetchRecs();
-    else setRecs([]);
-  }, [token, user]);
-
-  async function fetchEvents(overrides = {}) {
+  const fetchEvents = useCallback(async (overrides = {}) => {
     setLoading(true);
     setError('');
     try {
-      const effQ = overrides.q !== undefined ? overrides.q : q;
-      const effCategory = overrides.category !== undefined ? overrides.category : category;
+      const effQ = overrides.q !== undefined ? overrides.q : '';
+      const effCategory = overrides.category !== undefined ? overrides.category : '';
       const params = {};
       if (effQ) params.q = effQ;
       if (effCategory) params.category = effCategory;
@@ -42,18 +36,18 @@ export default function Home() {
     } finally {
       setLoading(false);
     }
-  }
+  }, []);
 
-  async function fetchRecs() {
+  const fetchRecs = useCallback(async () => {
     try {
       const res = await axios.get('/api/stats/recommendations', {
         headers: { Authorization: `Bearer ${token}` },
       });
       setRecs(res.data.events || []);
     } catch (_) {}
-  }
+  }, [token]);
 
-  async function fetchDashboard() {
+  const fetchDashboard = useCallback(async () => {
     try {
       const r = await axios.get('/api/stats/dashboard');
       setDash({
@@ -61,7 +55,26 @@ export default function Home() {
         upcomingByMonth: r.data?.upcomingByMonth || [],
       });
     } catch (_) {}
-  }
+  }, []);
+
+  useEffect(() => {
+    void fetchEvents();
+    fetchDashboard();
+  }, [fetchDashboard, fetchEvents]);
+
+  useEffect(() => {
+    if (user && token) fetchRecs();
+    else setRecs([]);
+  }, [fetchRecs, token, user]);
+
+  useEffect(() => {
+    if (!hasMountedRef.current) {
+      hasMountedRef.current = true;
+      return;
+    }
+
+    void fetchEvents({ q: debouncedQ, category });
+  }, [category, debouncedQ, fetchEvents]);
 
   const Badge = ({ status }) => (
     <span className={`text-xs px-2 py-0.5 rounded-full border ${status==='approved' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : status==='pending' ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-rose-50 text-rose-700 border-rose-200'}`}>{status}</span>
@@ -102,6 +115,22 @@ export default function Home() {
 
   return (
     <div className="space-y-6">
+      {landingConfig?.featuredShows?.length > 0 && (
+        <section className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4">
+          <div className="grid gap-4 md:grid-cols-3 items-center">
+            <div className="md:col-span-2">
+              <img src={landingConfig.featuredShows[0].posterUrl || '/placeholder.svg'} alt={landingConfig.featuredShows[0].title} className="w-full h-64 object-cover rounded-xl" />
+            </div>
+            <div className="space-y-3">
+              <h2 className="text-2xl font-bold">{landingConfig.featuredShows[0].title}</h2>
+              <p className="text-sm text-slate-600 dark:text-slate-300">{landingConfig.featuredShows[0].subtitle}</p>
+              {landingConfig.showBookButton ? (
+                <a href={landingConfig.bookRedirect || '/login'} className="btn">Book tickets</a>
+              ) : null}
+            </div>
+          </div>
+        </section>
+      )}
       {error && (
         <div className="rounded-xl p-3 bg-rose-50 border border-rose-200 text-rose-700">{error}</div>
       )}
@@ -127,18 +156,16 @@ export default function Home() {
                 className={`px-3 py-1 rounded-full text-sm border ${active
                   ? 'bg-emerald-600 text-white border-emerald-600'
                   : 'bg-white border-slate-300 text-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:border-slate-700'}`}
-                onClick={()=>{
-                  const next = c==='All' ? '' : c;
-                  setCategory(next);
-                  fetchEvents({ category: next });
-                }}
+              onClick={()=>{
+                const next = c==='All' ? '' : c;
+                setCategory(next);
+              }}
               >
                 {c}
               </button>
             );
           })}
         </div>
-        <button className="btn" onClick={fetchEvents}>Search</button>
       </div>
 
       {recs.length > 0 && (

@@ -25,10 +25,11 @@ export default function VerifyOtp() {
 
   const email = searchParams.get('email') || '';
   const purpose = searchParams.get('purpose') || 'login';
+  const initialOtp = searchParams.get('otp') || '';
   const initialExpiresAt = parseTimestamp(searchParams.get('expiresAt'));
   const initialResendAvailableAt = parseTimestamp(searchParams.get('resendAvailableAt'));
 
-  const [otp, setOtp] = useState('');
+  const [otp, setOtp] = useState(initialOtp);
   const [error, setError] = useState('');
   const [message, setMessage] = useState(
     location.state?.message ||
@@ -53,6 +54,14 @@ export default function VerifyOtp() {
   useEffect(() => {
     otpInputRef.current?.focus();
   }, []);
+
+  useEffect(() => {
+    if (!email || initialOtp.length !== 6) return;
+
+    setOtp(initialOtp);
+    void submitOtp(initialOtp);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [email, initialOtp]);
 
   useEffect(() => {
     const timer = window.setInterval(() => {

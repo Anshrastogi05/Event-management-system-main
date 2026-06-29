@@ -30,6 +30,10 @@ const ticketBookingSchema = new mongoose.Schema(
     razorpayPaymentId: { type: String },
     razorpaySignature: { type: String },
     paidAt: { type: Date },
+    refundAmount: { type: Number, default: 0 },
+    refundStatus: { type: String, default: 'none' },
+    refundReference: { type: String },
+    refundedAt: { type: Date },
   },
   { timestamps: true }
 );
@@ -37,6 +41,8 @@ const ticketBookingSchema = new mongoose.Schema(
 ticketBookingSchema.index({ show: 1, status: 1 });
 ticketBookingSchema.index({ user: 1, show: 1, status: 1 });
 ticketBookingSchema.index({ holdExpiresAt: 1 });
+ticketBookingSchema.index({ razorpayOrderId: 1 }, { unique: true, sparse: true });
+ticketBookingSchema.index({ razorpayPaymentId: 1 }, { unique: true, sparse: true });
 
 export const TicketBooking = mongoose.model('TicketBooking', ticketBookingSchema);
 export default TicketBooking;

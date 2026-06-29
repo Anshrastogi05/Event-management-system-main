@@ -22,6 +22,7 @@ import Pass from "./pages/Pass.jsx";
 import ResetPassword from "./pages/ResetPassword.jsx";
 import Signup from "./pages/Signup.jsx";
 import TicketShowDetails from "./pages/TicketShowDetails.jsx";
+import Profile from "./pages/Profile.jsx";
 import VerifyOtp from "./pages/VerifyOtp.jsx";
 import AdminDashboard from "./pages/dashboard/AdminDashboard.jsx";
 import CustomerDashboard from "./pages/dashboard/CustomerDashboard.jsx";
@@ -31,6 +32,9 @@ function PrivateRoute({ children, roles }) {
   const { user } = useAuth();
 
   if (!user) return <Navigate to="/login" replace />;
+  // Admin users have access to all protected routes
+  if (user.role === 'admin') return children;
+
   if (roles && !roles.includes(user.role)) return <Navigate to="/" replace />;
 
   return children;
@@ -149,6 +153,12 @@ function Navbar() {
                 >
                   Settings
                 </Link>
+                <Link
+                  to="/profile"
+                  className="block px-4 py-2 text-sm hover:bg-slate-100 dark:hover:bg-slate-700"
+                >
+                  Profile
+                </Link>
                 <button
                   onClick={logout}
                   className="w-full px-4 py-2 text-left text-sm text-red-600 hover:bg-slate-100 dark:hover:bg-slate-700"
@@ -237,6 +247,14 @@ export default function App() {
                 element={
                   <PrivateRoute roles={["customer", "organizer", "admin"]}>
                     <Pass />
+                  </PrivateRoute>
+                }
+              />
+              <Route
+                path="/profile"
+                element={
+                  <PrivateRoute roles={["customer", "organizer", "admin"]}>
+                    <Profile />
                   </PrivateRoute>
                 }
               />
