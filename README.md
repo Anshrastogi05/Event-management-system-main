@@ -1,196 +1,259 @@
-🎟️ Event Management System 
-Real-Time Event Booking Platform
-🚀 Overview
+# Event Manager
 
-The Event Management System is a scalable full-stack application that enables:
+Real-time event discovery, booking, ticketing, and administration platform built with React, Node.js, Express, MongoDB, and Socket.IO.
 
-🎯 Real-time event creation and updates
-🎟️ Seamless event booking and registration
-💳 Secure online payments via Razorpay
-📲 Instant ticket generation with QR codes and PDFs
+This project is designed to feel production-ready: it includes role-based dashboards, secure authentication, live updates, background workers, payment handling, and a deployment model that cleanly splits frontend and backend.
 
-This project simulates a production-grade event platform, focusing on:
+## Why This Project Stands Out
 
-Performance ⚡
-Security 🔐
-Real-time interactivity 🔄
-✨ Features
-👤 User
-Browse and explore events
-Register in real-time
-Secure payment integration
-Download PDF tickets
-Access QR-based entry system
-🛠️ Organizer
-Create, update, and manage events
-Upload media via Cloudinary
-Track attendees in real-time
-Export registrations as CSV
-Perform QR / ID-based check-ins
-🛡️ Admin
-Approve or reject events
-Moderate platform activity
-Manage system operations end-to-end
-⚡ Key Highlights
-🔄 Real-time updates using Socket.IO
-💳 Secure payments via Razorpay
-🔐 Authentication system:
-JWT-based login
-Role-based access control (RBAC)
-OTP verification
-🧾 Dynamic ticket generation:
-QR code-based entry
-Auto-generated PDF tickets
-☁️ Media storage using Cloudinary
-🧠 Schema validation using Zod
-🧱 Architecture
+- End-to-end product flow: browse events, sign up, book, pay, receive tickets, and manage registrations.
+- Real-time experience: Socket.IO powers live announcements and updates.
+- Production-minded backend: security middleware, rate limiting, cookies, compression, and structured route separation.
+- Multi-role system: customer, organizer, and admin experiences are separated through protected routes and authorization.
+- Operational features: email, SMS, refund, ticket-hold, and reminder workers run alongside the API.
+- Deployment ready: frontend and backend can be deployed independently with a clear environment-variable contract.
 
-        ┌──────────────────────┐
-        │      Frontend        │
-        │     (React.js)       │
-        └─────────┬────────────┘
-                  │ HTTP / WebSocket
-                  ▼
-        ┌──────────────────────┐
-        │   Backend Server     │
-        │  (Node.js + Express) │
-        └─────────┬────────────┘
-                  │
-     ┌────────────┼────────────┬──────────────┐
-     ▼            ▼            ▼              ▼
-┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────────┐
-│ MongoDB  │ │ Razorpay │ │Cloudinary│ │  Socket.IO   │
-│ Database │ │ Payments │ │ Media    │ │ Real-Time    │
-└──────────┘ └──────────┘ └──────────┘ └──────────────┘
+## Core Capabilities
 
-🏗️ Tech Stack
-🖥️ Frontend
-React.js
-Tailwind CSS
-🔧 Backend
-Node.js
-Express.js
-🗄️ Database
-MongoDB (Mongoose)
-🔌 Integrations & Tools
-Socket.IO
-Razorpay
-Cloudinary
-Zod
-JWT Authentication
-📂 Project Structure
+### Users
+
+- Search and filter events
+- View event details and movie show pages
+- Register and book tickets
+- Receive QR-based and PDF ticket output
+- Reset passwords and verify accounts through OTP
+- See personalized recommendations and live announcements
+
+### Organizers
+
+- Create, update, and delete events
+- Upload poster/media assets
+- Track registrations and attendance
+- Export participant data
+- Manage check-ins and event operations
+
+### Admins
+
+- Access admin-only dashboards
+- Review platform activity and analytics
+- Moderate and oversee the ecosystem end to end
+
+## Architecture
+
+```mermaid
+flowchart LR
+  U[Browser / React Frontend] -->|HTTP| A[Express API]
+  U -->|Socket.IO| S[Realtime Server]
+  A --> M[(MongoDB)]
+  A --> R[(Redis optional)]
+  A --> C[Cloudinary]
+  A --> P[Razorpay]
+  A --> E[Email / SMS Workers]
+  E --> N[External Providers]
+```
+
+## Tech Stack
+
+- Frontend: React 19, Vite, React Router, Tailwind CSS, Axios, Socket.IO Client
+- Backend: Node.js, Express.js, Mongoose, Socket.IO, BullMQ
+- Data: MongoDB, Redis
+- Integrations: Razorpay, Cloudinary, Nodemailer, QR code generation, CSV export
+
+## Repository Layout
+
+```text
 .
-├── client/                 # React frontend
+|-- backend/
+|   |-- src/
+|   |-- scripts/
+|   |-- uploads/
+|   |-- package.json
+|   `-- .env.example
+|-- frontend/
+|   |-- src/
+|   |-- public/
+|   |-- package.json
+|   `-- .env.example
+|-- DEPLOYMENT.md
+`-- README.md
+```
 
-│   └── src/
+## Key Engineering Details
 
-│       ├── components/     # Reusable UI components
+- Route-level protection is enforced in the frontend and backend.
+- Backend middleware includes `helmet`, `cors`, `morgan`, `compression`, `cookie-parser`, and rate limiting on `/api`.
+- The backend serves static uploads from `/uploads`.
+- Background loops start on server boot for ticket cleanup and event reminders.
+- Socket.IO is initialized from the main server entrypoint.
+- Environment validation is centralized in `backend/src/config/env.js`.
 
-│       ├── pages/          # Route-level pages
+## Getting Started
 
-│       └── hooks/          # Custom React hooks
+### Prerequisites
 
-│
-├── server/                 # Express backend
+- Node.js 18 or newer
+- MongoDB
+- Optional: Redis, Razorpay, Cloudinary, and SMTP credentials
 
-│   ├── controllers/        # Business logic
+### Clone the repository
 
-│   ├── models/             # Mongoose schemas
+```bash
+git clone <repo-url>
+cd Eventmanager-main
+```
 
-│   ├── routes/             # API route definitions
+### Install dependencies
 
-│   ├── middleware/         # Auth & validation middleware
-
-│   └── utils/              # Helper functions
-
-│
-└── README.md
-
-🚀 Getting Started
-
-
-Prerequisites
-
-Node.js v18+
-MongoDB (local or Atlas)
-Razorpay account
-Cloudinary account
-
-Installation
-bash# Clone the repository
-git clone https://github.com/Anshrastogi05/event-management-system.git
-cd event-management-system
-
-# Install server dependencies
-cd server
+```bash
+cd backend
 npm install
 
-# Install client dependencies
-cd ../client
+cd ../frontend
 npm install
-Environment Variables
-Create a .env file inside the server/ directory:
-envPORT=5000
-MONGO_URI=your_mongodb_uri
-JWT_SECRET=your_jwt_secret
+```
 
-RAZORPAY_KEY_ID=your_razorpay_key
-RAZORPAY_KEY_SECRET=your_razorpay_secret
+### Configure backend environment
 
-CLOUDINARY_CLOUD_NAME=your_cloud_name
-CLOUDINARY_API_KEY=your_api_key
-CLOUDINARY_API_SECRET=your_api_secret
-Run the App
-bash# Start the backend server
-cd server
+Create `backend/.env` from `backend/.env.example`.
+
+Minimum required values:
+
+```env
+NODE_ENV=development
+PORT=5050
+MONGO_URI=your_mongodb_connection_string
+JWT_SECRET=your_long_random_secret
+```
+
+Recommended local development values:
+
+```env
+JWT_EXPIRES_IN=7d
+CLIENT_URL=http://localhost:5173
+CLIENT_URLS=http://localhost:5173
+AUTH_OTP_EXPIRES_IN_MINUTES=5
+AUTH_OTP_MAX_ATTEMPTS=5
+AUTH_OTP_RESEND_COOLDOWN_SECONDS=60
+PASSWORD_RESET_TOKEN_TTL_MINUTES=30
+TICKET_HOLD_MINUTES=8
+SMTP_HOST=
+SMTP_PORT=587
+SMTP_USER=
+SMTP_PASS=
+EMAIL_FROM=
+RAZORPAY_KEY_ID=
+RAZORPAY_KEY_SECRET=
+RAZORPAY_WEBHOOK_SECRET=
+REDIS_URL=
+REDIS_HOST=localhost
+REDIS_PORT=6379
+REDIS_PASSWORD=
+CLOUDINARY_CLOUD_NAME=
+CLOUDINARY_API_KEY=
+CLOUDINARY_API_SECRET=
+CLOUDINARY_FOLDER=event-manager
+ELASTIC_URL=
+```
+
+### Configure frontend environment
+
+Create `frontend/.env` from `frontend/.env.example`.
+
+```env
+VITE_API_URL=http://localhost:5050
+VITE_SOCKET_URL=http://localhost:5050
+VITE_USE_SAME_ORIGIN=false
+```
+
+If the frontend and backend are served from the same domain, set:
+
+```env
+VITE_USE_SAME_ORIGIN=true
+```
+
+## Run Locally
+
+Start the backend:
+
+```bash
+cd backend
 npm run dev
+```
 
-# Start the frontend (in a separate terminal)
-cd client
+Start the frontend in a separate terminal:
+
+```bash
+cd frontend
 npm run dev
+```
 
-🔐 Security
+## Available Scripts
 
-✅ JWT-based authentication
-✅ Role-Based Access Control (RBAC)
-✅ OTP verification system
-✅ Input validation using Zod
-✅ Secure payment verification via Razorpay webhook signatures
+### Backend
 
+- `npm run dev` - start the API with nodemon
+- `npm start` - run the production server
+- `npm run seed` - seed the database
+- `npm run bulk-index` - bulk index search data
+- `npm run test:webhook` - test Razorpay webhook handling
 
-📈 Future Scope
+### Frontend
 
- 📊 Admin analytics dashboard
- 📩 Email and SMS notifications
- 📱 Mobile-first UI optimization
- 🤖 AI-based event recommendations
- 🌍 Multi-language support
+- `npm run dev` - run the Vite dev server
+- `npm run build` - create a production build
+- `npm run lint` - run ESLint
+- `npm run preview` - preview the production build
 
+## API Surface
 
-🤝 Contributing
-Contributions are welcome!
+Main routes exposed by the backend:
 
-Fork the repository
-Create a feature branch: git checkout -b feature/your-feature
-Commit your changes: git commit -m 'Add some feature'
-Push to the branch: git push origin feature/your-feature
-Open a Pull Request
+- `GET /api/health`
+- `GET /api/location/current`
+- `GET /api/auth/me`
+- `POST /api/auth/signup`
+- `POST /api/auth/login`
+- `POST /api/auth/otp/verify`
+- `POST /api/auth/otp/resend`
+- `POST /api/auth/forgot-password`
+- `POST /api/auth/reset-password`
+- `GET /api/events`
+- `GET /api/events/:id`
+- `POST /api/events`
+- `PUT /api/events/:id`
+- `DELETE /api/events/:id`
+- `GET /api/registrations`
+- `GET /api/reviews`
+- `GET /api/admin`
+- `GET /api/stats`
+- `GET /api/tickets`
 
+Static uploads are available at `/uploads`.
 
-👨‍💻 Author
-Ansh Rastogi
-🔗 GitHub: @Anshrastogi05
+## Deployment
 
-📄 License
-This project is licensed under the MIT License.
+Recommended split deployment:
 
-<div align="center">
-  <sub>Built with ❤️ by Ansh Rastogi</sub>
-</div>
+- Backend: Render
+- Frontend: Vercel
 
-Ansh Rastogi
-🔗 GitHub: https://github.com/Anshrastogi05
+See [`DEPLOYMENT.md`](DEPLOYMENT.md) for the full setup guide and environment variable expectations.
 
-📄 License
+## Interview Talking Points
 
-This project is licensed under the MIT License.
+If you are presenting this project, these are the strongest points to emphasize:
+
+- You built both the customer-facing experience and the operational backend.
+- You handled auth, authorization, and role-based routing.
+- You added real-time behavior instead of a purely static CRUD app.
+- You designed for reliability with background workers and ticket-hold cleanup.
+- You integrated third-party services for payments, media, and notifications.
+- You prepared the app for real deployment with separate frontend and backend environments.
+
+## License
+
+MIT license 
+
+## Author
+
+Ansh Rastogi 
