@@ -285,8 +285,10 @@ function Leaderboard() {
   const [rows, setRows] = useState([]);
   useEffect(() => {
     (async () => {
-      const r = await axios.get("/api/stats/leaderboard");
-      setRows(r.data.leaderboard || []);
+      try {
+        const r = await axios.get("/api/stats/leaderboard");
+        setRows(r.data.leaderboard || []);
+      } catch (_) {}
     })();
   }, []);
   return (

@@ -2,9 +2,12 @@ import mongoose from "mongoose";
 import User from "../src/models/User.js";
 import { env } from "../src/config/env.js";
 
-const email = "ansh0545777@gmail.com";
-const password = "Ansh@777";
+const email = env.adminEmail;
+const password = env.adminPassword;
 
+if (!email || !password) {
+  throw new Error("ADMIN_EMAIL and ADMIN_PASSWORD must be set");
+}
 async function main() {
   await mongoose.connect(env.mongoUri);
 

@@ -735,11 +735,15 @@ export const updateAdminMovieShow = async (req, res) => {
     const showDate = req.body.date
       ? new Date(req.body.date)
       : new Date(sourceShow.date);
-    const endDate = req.body.endDate
-      ? new Date(req.body.endDate)
-      : sourceShow.endDate
-        ? new Date(sourceShow.endDate)
-        : null;
+    await Show.updateOne(
+      { _id: sourceShow._id },
+      {
+        date: showDate,
+        endDate,
+        currency,
+        featured,
+      },
+    );
 
     if (!title) throw createBadRequest("Movie title is required.");
     if (!description) throw createBadRequest("Movie description is required.");

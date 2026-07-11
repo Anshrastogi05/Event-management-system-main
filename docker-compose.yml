@@ -28,7 +28,7 @@ services:
     environment:
       NODE_ENV: production
       PORT: 5050
-      MONGO_URI: mongodb+srv://ansh_vr22:Anshevent15@cluster0.5andofc.mongodb.net/?appName=Cluster0
+      MONGO_URI: ${MONGO_URI}
       JWT_SECRET: change-me-in-production
       CLIENT_URL: http://localhost:5173
       CLIENT_URLS: http://localhost:5173
