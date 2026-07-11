@@ -187,6 +187,7 @@ async function createShowRecord({
   movie,
   screen,
   date,
+  endDate,
   currency = "INR",
   featured = false,
 }) {
@@ -214,6 +215,7 @@ async function createShowRecord({
     movie_id: movie.movie_id,
     screen_id: screen.screen_id,
     date,
+    endDate,
     currency,
     featured,
   });
@@ -246,6 +248,7 @@ export async function createMovieShowCatalogEntry({
   venue,
   city,
   date,
+  endDate,
   currency = "INR",
   posterUrl,
   language = "",
@@ -292,6 +295,7 @@ export async function createMovieShowCatalogEntry({
     movie,
     screen,
     date,
+    endDate,
     currency,
     featured,
   });

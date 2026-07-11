@@ -1,6 +1,6 @@
-import jwt from 'jsonwebtoken';
-import { env } from '../config/env.js';
-import User from '../models/User.js';
+import jwt from "jsonwebtoken";
+import { env } from "../config/env.js";
+import User from "../models/User.js";
 
 function createHttpError(status, message) {
   const error = new Error(message);
@@ -8,30 +8,38 @@ function createHttpError(status, message) {
   return error;
 }
 
+function getBearerToken(req) {
+  const authHeader = (req.headers.authorization || "").trim();
+  if (!authHeader.startsWith("Bearer ")) return null;
+
+  const token = authHeader.slice(7).trim();
+  return token || null;
+}
+
 async function resolveAuthenticatedUser(req, { optional = false } = {}) {
-  const authHeader = req.headers.authorization || '';
-  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
+  const token = getBearerToken(req);
   if (!token) {
     if (optional) return null;
-    throw createHttpError(401, 'Unauthorized');
+    throw createHttpError(401, "Unauthorized");
   }
 
   let decoded;
   try {
     decoded = jwt.verify(token, env.jwtSecret);
   } catch (err) {
-    throw createHttpError(401, 'Invalid token');
+    if (optional) return null;
+    throw createHttpError(401, "Invalid token");
   }
 
   const userId = decoded.id || decoded._id;
-  if (!userId) throw createHttpError(401, 'Unauthorized');
+  if (!userId) throw createHttpError(401, "Unauthorized");
 
   const user = await User.findById(userId)
-    .select('name email role isBlocked')
+    .select("name email role isBlocked")
     .lean();
 
-  if (!user) throw createHttpError(401, 'Unauthorized');
-  if (user.isBlocked) throw createHttpError(403, 'User is blocked');
+  if (!user) throw createHttpError(401, "Unauthorized");
+  if (user.isBlocked) throw createHttpError(403, "User is blocked");
 
   return {
     id: user._id.toString(),
@@ -60,4 +68,3 @@ export async function optionalAuthenticate(req, res, next) {
     return res.status(err.status || 500).json({ message: err.message });
   }
 }
-

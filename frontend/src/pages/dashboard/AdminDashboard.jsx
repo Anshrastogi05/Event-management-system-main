@@ -43,8 +43,10 @@ const defaultMovieForm = {
   description: "",
   venue: "",
   city: "",
+  cities: [],
   screenName: "",
   date: "",
+  endDate: "",
   durationMinutes: "150",
   rating: "0",
   currency: "INR",
@@ -137,8 +139,10 @@ function buildMovieFormFromMovie(movie) {
     description: movie?.description || "",
     venue: movie?.venue || "",
     city: movie?.city || "",
+    cities: movie?.city ? [movie?.city] : [],
     screenName: movie?.screen?.name || `${movie?.title || "Movie"} Screen`,
     date: formatDateTimeInput(movie?.date),
+    endDate: formatDateTimeInput(movie?.endDate || movie?.availableUntil),
     durationMinutes: String(movie?.durationMinutes || 150),
     rating: String(movie?.rating ?? 0),
     currency: movie?.currency || "INR",
@@ -213,6 +217,24 @@ export default function AdminDashboard() {
       ...current,
       [field]: value,
     }));
+  }
+
+  function toggleMovieCity(cityName) {
+    setMovieForm((current) => {
+      const selectedCities = current.cities || [];
+      const nextCities = selectedCities.includes(cityName)
+        ? selectedCities.filter((city) => city !== cityName)
+        : [...selectedCities, cityName];
+      const normalizedCities = nextCities.filter(Boolean);
+
+      return {
+        ...current,
+        cities: normalizedCities,
+        city: normalizedCities.includes("ALL_CITIES")
+          ? "ALL_CITIES"
+          : normalizedCities[0] || "",
+      };
+    });
   }
 
   function resetMovieForm() {
@@ -367,14 +389,24 @@ export default function AdminDashboard() {
   async function submitMovie(event) {
     event.preventDefault();
 
+    const selectedCities = Array.isArray(movieForm.cities)
+      ? movieForm.cities.filter(Boolean)
+      : [];
+    const submissionPayload = {
+      ...movieForm,
+      city: selectedCities.includes("ALL_CITIES")
+        ? "ALL_CITIES"
+        : selectedCities[0] || movieForm.city || "",
+    };
+
     // If admin selected All Cities, ask for confirmation first
     if (
-      movieForm.city === "ALL_CITIES" &&
+      (submissionPayload.city === "ALL_CITIES" || selectedCities.length > 1) &&
       !confirmAllOpen &&
       !pendingMovieFormData
     ) {
       const formData = new FormData();
-      Object.entries(movieForm).forEach(([field, value]) => {
+      Object.entries(submissionPayload).forEach(([field, value]) => {
         formData.append(
           field,
           typeof value === "boolean" ? String(value) : value,
@@ -393,7 +425,11 @@ export default function AdminDashboard() {
     try {
       const formData = pendingMovieFormData || new FormData();
       if (!pendingMovieFormData) {
-        Object.entries(movieForm).forEach(([field, value]) => {
+        Object.entries(submissionPayload).forEach(([field, value]) => {
+          if (field === "cities") {
+            formData.append("cities", JSON.stringify(value));
+            return;
+          }
           formData.append(
             field,
             typeof value === "boolean" ? String(value) : value,
@@ -653,14 +689,6 @@ export default function AdminDashboard() {
                 INR {seatPlanSummary.minPrice} - INR {seatPlanSummary.maxPrice}
               </div>
             </div>
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm dark:border-slate-800 dark:bg-slate-950">
-              <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
-                Form mode
-              </div>
-              <div className="mt-2 text-lg font-bold text-slate-900 dark:text-slate-100">
-                {isEditingMovie ? "Editing" : "Creating"}
-              </div>
-            </div>
           </div>
         </div>
 
@@ -729,7 +757,7 @@ export default function AdminDashboard() {
 
             <div className="space-y-1">
               <label className="text-sm text-slate-600 dark:text-slate-300">
-                Date and time
+                Show starts on
               </label>
               <input
                 className="input w-full"
@@ -739,6 +767,20 @@ export default function AdminDashboard() {
                   updateMovieForm("date", event.target.value)
                 }
                 required
+              />
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-sm text-slate-600 dark:text-slate-300">
+                Available until
+              </label>
+              <input
+                className="input w-full"
+                type="datetime-local"
+                value={movieForm.endDate}
+                onChange={(event) =>
+                  updateMovieForm("endDate", event.target.value)
+                }
               />
             </div>
 
@@ -817,28 +859,64 @@ export default function AdminDashboard() {
               />
             </div>
 
-            <div className="space-y-1">
+            <div className="space-y-1 xl:col-span-2">
               <label className="text-sm text-slate-600 dark:text-slate-300">
-                Theater city
+                Theater cities
               </label>
-              <select
-                className="input w-full"
-                value={movieForm.city}
-                onChange={(event) =>
-                  updateMovieForm("city", event.target.value)
-                }
-                required
-              >
-                <option value="">Select city</option>
-                <option value="ALL_CITIES">
-                  All Cities (rollout across India)
-                </option>
-                {INDIA_CITIES.map((c) => (
-                  <option key={c} value={c}>
-                    {c}
-                  </option>
-                ))}
-              </select>
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-950">
+                <div className="mb-2 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    className={`rounded-full border px-3 py-1 text-sm ${
+                      (movieForm.cities || []).includes("ALL_CITIES")
+                        ? "border-emerald-500 bg-emerald-500 text-white"
+                        : "border-slate-300 text-slate-700 dark:border-slate-700 dark:text-slate-200"
+                    }`}
+                    onClick={() => toggleMovieCity("ALL_CITIES")}
+                  >
+                    All Cities
+                  </button>
+                  {INDIA_CITIES.map((cityName) => {
+                    const selected = (movieForm.cities || []).includes(
+                      cityName,
+                    );
+                    return (
+                      <button
+                        key={cityName}
+                        type="button"
+                        className={`rounded-full border px-3 py-1 text-sm ${
+                          selected
+                            ? "border-emerald-500 bg-emerald-500 text-white"
+                            : "border-slate-300 text-slate-700 dark:border-slate-700 dark:text-slate-200"
+                        }`}
+                        onClick={() => toggleMovieCity(cityName)}
+                      >
+                        {cityName}
+                      </button>
+                    );
+                  })}
+                </div>
+                <div className="text-xs text-slate-500 dark:text-slate-400">
+                  Click multiple cities to select them. Selected cities appear
+                  below.
+                </div>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {(movieForm.cities || []).length > 0 ? (
+                    (movieForm.cities || []).map((cityName) => (
+                      <span
+                        key={cityName}
+                        className="rounded-full bg-emerald-100 px-3 py-1 text-sm font-medium text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300"
+                      >
+                        {cityName}
+                      </span>
+                    ))
+                  ) : (
+                    <span className="text-sm text-slate-500 dark:text-slate-400">
+                      No cities selected yet.
+                    </span>
+                  )}
+                </div>
+              </div>
             </div>
 
             <div className="space-y-1 xl:col-span-4">

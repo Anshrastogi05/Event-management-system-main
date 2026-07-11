@@ -100,6 +100,35 @@ function parseTags(value) {
     .filter(Boolean);
 }
 
+function parseCities(value) {
+  if (Array.isArray(value)) {
+    return value.map((entry) => normalizeText(String(entry))).filter(Boolean);
+  }
+
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return [];
+
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (Array.isArray(parsed)) {
+        return parsed
+          .map((entry) => normalizeText(String(entry)))
+          .filter(Boolean);
+      }
+    } catch {
+      // fall back to comma-separated values
+    }
+
+    return trimmed
+      .split(",")
+      .map((entry) => normalizeText(entry))
+      .filter(Boolean);
+  }
+
+  return [];
+}
+
 function getSeatLayoutRequestValue(body, fieldName, legacyFieldName) {
   const nextValue = body?.[fieldName];
   if (nextValue !== undefined && nextValue !== null && nextValue !== "") {
@@ -555,6 +584,12 @@ export const createAdminMovieShow = async (req, res) => {
     const description = normalizeText(req.body.description);
     const venue = normalizeText(req.body.venue);
     const city = normalizeText(req.body.city);
+    const selectedCities = parseCities(req.body.cities);
+    const targetCities = selectedCities.length
+      ? selectedCities
+      : city
+        ? [city]
+        : [];
     const screenName = normalizeText(req.body.screenName) || `${title} Screen`;
     const language = normalizeText(req.body.language);
     const rating = parseDecimal(req.body.rating, "Rating", 0, {
@@ -564,11 +599,13 @@ export const createAdminMovieShow = async (req, res) => {
     const currency =
       normalizeText(req.body.currency || "INR").toUpperCase() || "INR";
     const showDate = req.body.date ? new Date(req.body.date) : null;
+    const endDate = req.body.endDate ? new Date(req.body.endDate) : null;
 
     if (!title) throw createBadRequest("Movie title is required.");
     if (!description) throw createBadRequest("Movie description is required.");
     if (!venue) throw createBadRequest("Venue is required.");
-    if (!city) throw createBadRequest("City is required.");
+    if (!targetCities.length)
+      throw createBadRequest("At least one city is required.");
     if (!showDate || Number.isNaN(showDate.getTime())) {
       throw createBadRequest("A valid show date and time is required.");
     }
@@ -588,7 +625,7 @@ export const createAdminMovieShow = async (req, res) => {
       : null;
     const featured = parseBoolean(req.body.featured);
 
-    if (city === "ALL_CITIES") {
+    if (city === "ALL_CITIES" || selectedCities.includes("ALL_CITIES")) {
       // Roll out the same show across all configured Indian cities
       const createdShows = [];
       for (const targetCity of INDIA_CITIES) {
@@ -601,6 +638,7 @@ export const createAdminMovieShow = async (req, res) => {
           venue,
           city: targetCity,
           date: showDate,
+          endDate,
           duration: durationMinutes,
           currency,
           posterUrl: uploadedPoster?.url,
@@ -622,31 +660,39 @@ export const createAdminMovieShow = async (req, res) => {
         shows: hydratedShows,
       });
     } else {
-      const show = await createMovieShowCatalogEntry({
-        title,
-        genre,
-        rating,
-        subtitle,
-        description,
-        venue,
-        city,
-        date: showDate,
-        duration: durationMinutes,
-        currency,
-        posterUrl: uploadedPoster?.url,
-        language,
-        featured,
-        tags: parseTags(req.body.tags),
-        screenName,
-        seatLayout,
-      });
+      const createdShows = [];
+      for (const targetCity of targetCities) {
+        const show = await createMovieShowCatalogEntry({
+          title,
+          genre,
+          rating,
+          subtitle,
+          description,
+          venue,
+          city: targetCity,
+          date: showDate,
+          endDate,
+          duration: durationMinutes,
+          currency,
+          posterUrl: uploadedPoster?.url,
+          language,
+          featured,
+          tags: parseTags(req.body.tags),
+          screenName,
+          seatLayout,
+        });
+        createdShows.push(show);
+      }
 
-      const hydratedShow = await findHydratedTicketShowById(show._id);
+      const hydratedShows = await Promise.all(
+        createdShows.map((show) => findHydratedTicketShowById(show._id)),
+      );
 
       res.status(201).json({
-        message: `${title} was added to the movies page.`,
-        show: hydratedShow,
+        message: `${title} was added to ${hydratedShows.length} city selections.`,
+        shows: hydratedShows,
       });
+      return;
     }
   } catch (err) {
     res.status(err.status || 500).json({ message: err.message });
@@ -689,6 +735,11 @@ export const updateAdminMovieShow = async (req, res) => {
     const showDate = req.body.date
       ? new Date(req.body.date)
       : new Date(sourceShow.date);
+    const endDate = req.body.endDate
+      ? new Date(req.body.endDate)
+      : sourceShow.endDate
+        ? new Date(sourceShow.endDate)
+        : null;
 
     if (!title) throw createBadRequest("Movie title is required.");
     if (!description) throw createBadRequest("Movie description is required.");

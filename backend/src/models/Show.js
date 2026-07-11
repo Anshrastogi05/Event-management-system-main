@@ -13,6 +13,7 @@ const showSchema = new mongoose.Schema(
     screen_id: { type: String, required: true, index: true },
     type: { type: String, enum: ["movie"], default: "movie" },
     date: { type: Date, required: true },
+    endDate: { type: Date },
     currency: { type: String, default: "INR" },
     featured: { type: Boolean, default: false },
   },

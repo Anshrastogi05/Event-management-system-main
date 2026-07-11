@@ -23,10 +23,12 @@ services:
       dockerfile: Dockerfile
     container_name: eventmanager-backend
     restart: unless-stopped
+    env_file:
+      - ./backend/.env
     environment:
       NODE_ENV: production
       PORT: 5050
-      MONGO_URI: mongodb://mongo:27017/event_mgmt
+      MONGO_URI: mongodb+srv://ansh_vr22:Anshevent15@cluster0.5andofc.mongodb.net/?appName=Cluster0
       JWT_SECRET: change-me-in-production
       CLIENT_URL: http://localhost:5173
       CLIENT_URLS: http://localhost:5173
