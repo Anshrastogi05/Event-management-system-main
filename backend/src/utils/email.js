@@ -10,6 +10,7 @@ const transporter = env.smtpHost
       host: env.smtpHost,
       port: env.smtpPort,
       secure: env.smtpPort === 465,
+      family: 4,
       auth:
         env.smtpUser && env.smtpPass
           ? { user: env.smtpUser, pass: env.smtpPass }
