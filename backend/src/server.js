@@ -33,7 +33,36 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 const server = http.createServer(app);
+//-------------------------------------------
+import nodemailer from "nodemailer";
 
+app.get("/smtp-test", async (req, res) => {
+  try {
+    const transporter = nodemailer.createTransport({
+      host: "smtp.gmail.com",
+      port: 587,
+      secure: false,
+      auth: {
+        user: process.env.SMTP_USER,
+        pass: process.env.SMTP_PASS,
+      },
+      connectionTimeout: 10000,
+    });
+
+    await transporter.verify();
+
+    res.send("SMTP OK");
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({
+      message: err.message,
+      code: err.code,
+      command: err.command,
+    });
+  }
+});
+
+//-------------------------
 function normalizeClientIp(value = "") {
   const trimmedValue = String(value || "").trim();
   if (!trimmedValue) return "";
