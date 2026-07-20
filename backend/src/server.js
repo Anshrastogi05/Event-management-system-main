@@ -25,7 +25,9 @@ import "./workers/emailWorker.js";
 import "./workers/reminderWorker.js";
 import "./workers/smsWorker.js";
 import "./workers/refundWorker.js";
+import dns from "node:dns";
 
+dns.setDefaultResultOrder("ipv4first");
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
