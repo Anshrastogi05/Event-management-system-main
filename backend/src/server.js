@@ -109,11 +109,96 @@ async function lookupIpLocation(req, res) {
       region: data.regionName || data.region || "",
       country: data.country || "",
       ip: data.query || requestIp || "",
+      method: "ip",
       source: "ip-api",
     });
   } catch (error) {
     res.status(500).json({
       message: error.message || "Unable to detect your current city.",
+    });
+  }
+}
+
+function normalizeReverseGeocodeAddress(address = {}) {
+  const city =
+    address.city ||
+    address.town ||
+    address.village ||
+    address.hamlet ||
+    address.municipality ||
+    address.county ||
+    address.state_district ||
+    "";
+
+  const region = address.state || address.region || "";
+  const country = address.country || "";
+
+  return {
+    city: String(city).trim(),
+    region: String(region).trim(),
+    country: String(country).trim(),
+  };
+}
+
+async function lookupReverseGeocodedLocation(req, res) {
+  try {
+    const latitude = Number(req.query.lat);
+    const longitude = Number(req.query.lng);
+
+    if (
+      !Number.isFinite(latitude) ||
+      !Number.isFinite(longitude) ||
+      latitude < -90 ||
+      latitude > 90 ||
+      longitude < -180 ||
+      longitude > 180
+    ) {
+      return res.status(400).json({
+        message: "Valid latitude and longitude are required.",
+      });
+    }
+
+    const lookupEndpoint =
+      `https://nominatim.openstreetmap.org/reverse?format=jsonv2&addressdetails=1` +
+      `&lat=${encodeURIComponent(latitude)}&lon=${encodeURIComponent(longitude)}`;
+
+    const response = await fetch(lookupEndpoint, {
+      headers: {
+        Accept: "application/json",
+        "Accept-Language": "en",
+        "User-Agent": "Event-management-system-main/1.0",
+      },
+    });
+
+    if (!response.ok) {
+      return res.status(502).json({
+        message: "Unable to resolve your current location right now.",
+      });
+    }
+
+    const data = await response.json();
+    const address = normalizeReverseGeocodeAddress(data.address || {});
+    const resolvedCity = address.city || data.name || "";
+
+    if (!resolvedCity) {
+      return res.status(502).json({
+        message: "Unable to resolve your current city.",
+      });
+    }
+
+    res.set("Cache-Control", "no-store");
+    res.json({
+      city: resolvedCity,
+      region: address.region,
+      country: address.country,
+      lat: latitude,
+      lng: longitude,
+      method: "browser",
+      source: "nominatim",
+    });
+  } catch (error) {
+    res.status(500).json({
+      message: error.message || "Unable to resolve your current location.",
     });
   }
 }
@@ -155,6 +240,7 @@ app.use("/uploads", express.static(uploadsDir));
 // API Routes (mounted later when implemented)
 app.get("/api/health", (req, res) => res.json({ status: "ok" }));
 app.get("/api/location/current", lookupIpLocation);
+app.get("/api/location/reverse", lookupReverseGeocodedLocation);
 app.use("/api/auth", authRoutes);
 app.use("/api/events", eventRoutes);
 app.use("/api/registrations", registrationRoutes);

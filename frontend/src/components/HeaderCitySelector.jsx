@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import INDIA_CITIES from "../config/indiaCities.js";
 import { useLocationSelection } from "../context/useLocationSelection.js";
-import { fetchCurrentIpLocation } from "../utils/ipLocation.js";
+import { fetchCurrentLocation } from "../utils/ipLocation.js";
 
 function SearchIcon() {
   return (
@@ -86,6 +86,7 @@ export default function HeaderCitySelector() {
   const [liveLocationState, setLiveLocationState] = useState({
     status: "idle",
     message: "",
+    method: "",
   });
   const rootRef = useRef(null);
   const matchingCities = useMemo(() => {
@@ -133,11 +134,12 @@ export default function HeaderCitySelector() {
   async function detectLiveLocation() {
     setLiveLocationState({
       status: "detecting",
-      message: "Detecting your current city...",
+      message: "Detecting your current location...",
+      method: "",
     });
 
     try {
-      const data = await fetchCurrentIpLocation();
+      const data = await fetchCurrentLocation();
       const city = data.city || "";
       const region = data.region || "";
       const country = data.country || "";
@@ -153,30 +155,40 @@ export default function HeaderCitySelector() {
         city,
         label: label || city,
         source: "live",
+        lat: data.lat,
+        lng: data.lng,
       });
       setMenuOpen(false);
       setLiveLocationState({
         status: "success",
         message: label || city,
+        method: data.method || "",
       });
     } catch (error) {
       setLiveLocationState({
         status: "error",
         message: error.message || "Unable to detect your current city.",
+        method: "",
       });
     }
   }
 
   const currentCityText = selectedCity || "Select city";
+  const liveLocationMessage =
+    liveLocationState.method === "browser"
+      ? "Detected using your device location"
+      : liveLocationState.method === "ip-api"
+        ? "Detected using your public IP address"
+        : "Current location is active";
   const currentCityHelper =
     liveLocationState.status === "detecting"
-      ? "Detecting your current city from your IP address..."
+      ? "Detecting your current location..."
       : liveLocationState.status === "error"
         ? liveLocationState.message
         : liveLocationState.status === "success"
-          ? `Detected via IP: ${liveLocationState.message}`
+          ? `${liveLocationMessage}: ${liveLocationState.message}`
           : selectedLocation?.source === "live"
-            ? `Detected via IP: ${selectedLocation?.label || selectedCity}`
+            ? "Current location is active"
             : selectedCity
               ? "Selected city is active"
               : "Choose a city to browse";
