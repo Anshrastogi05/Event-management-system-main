@@ -52,28 +52,39 @@ app.get("/smtp-test", async (req, res) => {
   }
 });
 
+import net from "node:net";
+
 app.get("/tcp-test", async (req, res) => {
+  const testPort = Number(req.query.port || 587);
+
   const socket = net.createConnection({
     host: "smtp-relay.brevo.com",
-    port: 587,
+    port: testPort,
     timeout: 5000,
   });
 
   socket.on("connect", () => {
     socket.destroy();
-    res.json({ status: "TCP connection successful" });
+    res.json({
+      port: testPort,
+      status: "connected",
+    });
   });
 
   socket.on("timeout", () => {
     socket.destroy();
-    res.status(500).json({ status: "TCP timeout" });
+    res.status(500).json({
+      port: testPort,
+      status: "timeout",
+    });
   });
 
   socket.on("error", (err) => {
     res.status(500).json({
-      status: "TCP error",
-      error: err.message,
+      port: testPort,
+      status: "error",
       code: err.code,
+      error: err.message,
     });
   });
 });
