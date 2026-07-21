@@ -38,7 +38,9 @@ function parseSenderFromEmailFrom(value = "") {
 
   const angleMatch = trimmedValue.match(/^(.*)<([^<>]+)>$/);
   if (angleMatch) {
-    const name = String(angleMatch[1] || "").trim().replace(/^"|"$/g, "");
+    const name = String(angleMatch[1] || "")
+      .trim()
+      .replace(/^"|"$/g, "");
     const email = String(angleMatch[2] || "").trim();
 
     if (!email) {
@@ -136,7 +138,9 @@ export async function sendEmail({ to, subject, html, text }) {
     throw new Error("Email subject is required");
   }
 
-  const sender = parseSenderFromEmailFrom(env.emailFrom || process.env.EMAIL_FROM);
+  const sender = parseSenderFromEmailFrom(
+    env.emailFrom || process.env.EMAIL_FROM,
+  );
   const recipient = normalizeRecipient(to);
   const payload = {
     sender,
@@ -153,10 +157,16 @@ export async function sendEmail({ to, subject, html, text }) {
   }
 
   try {
-    return await getBrevoClient().transactionalEmails.sendTransacEmail(payload);
+    const response =
+      await getBrevoClient().transactionalEmails.sendTransacEmail(payload);
+
+    console.log("========== BREVO SUCCESS ==========");
+    console.log(response);
+    console.log("==================================");
+
+    return response;
   } catch (error) {
     logBrevoError(`Failed to send email to ${recipient.email}:`, error);
     throw createSendEmailError(error);
   }
 }
-
