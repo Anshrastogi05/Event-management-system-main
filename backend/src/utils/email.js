@@ -1,84 +1,162 @@
-import nodemailer from "nodemailer";
+import { BrevoClient } from "@getbrevo/brevo";
 import { env } from "../config/env.js";
 
-const emailDeliveryTimeoutMs = Number(
-  process.env.EMAIL_DELIVERY_TIMEOUT_MS || 15000,
-);
+let brevoClient = null;
 
-const requiredSmtpEnvVars = [
-  "SMTP_HOST",
-  "SMTP_PORT",
-  "SMTP_USER",
-  "SMTP_PASS",
-  "EMAIL_FROM",
-];
+function getMissingEmailEnvVars() {
+  const missing = [];
 
-let transporter = null;
+  if (!String(env.brevoApiKey || process.env.BREVO_API_KEY || "").trim()) {
+    missing.push("BREVO_API_KEY");
+  }
 
-function getMissingSmtpEnvVars() {
-  return requiredSmtpEnvVars.filter((name) => !String(process.env[name] || "").trim());
+  if (!String(env.emailFrom || process.env.EMAIL_FROM || "").trim()) {
+    missing.push("EMAIL_FROM");
+  }
+
+  return missing;
 }
 
-export function hasSmtpConfiguration() {
-  return getMissingSmtpEnvVars().length === 0;
+export function hasBrevoConfiguration() {
+  return getMissingEmailEnvVars().length === 0;
 }
 
-function assertSmtpConfiguration() {
-  const missing = getMissingSmtpEnvVars();
+function assertBrevoConfiguration() {
+  const missing = getMissingEmailEnvVars();
   if (missing.length) {
     throw new Error(
-      `Missing required SMTP environment variable${missing.length > 1 ? "s" : ""}: ${missing.join(", ")}`,
+      `Missing required Brevo environment variable${missing.length > 1 ? "s" : ""}: ${missing.join(", ")}`,
     );
   }
 }
 
-function getSmtpTransporter() {
-  if (!transporter) {
-    assertSmtpConfiguration();
-
-    transporter = nodemailer.createTransport({
-      host: process.env.SMTP_HOST,
-      port: Number(process.env.SMTP_PORT),
-      secure: Number(process.env.SMTP_PORT) === 465,
-      auth: {
-        user: process.env.SMTP_USER,
-        pass: process.env.SMTP_PASS,
-      },
-      connectionTimeout: 10000,
-      greetingTimeout: 10000,
-      socketTimeout: 10000,
-    });
+function parseSenderFromEmailFrom(value = "") {
+  const trimmedValue = String(value || "").trim();
+  if (!trimmedValue) {
+    throw new Error("Missing required Brevo environment variable: EMAIL_FROM");
   }
 
-  return transporter;
+  const angleMatch = trimmedValue.match(/^(.*)<([^<>]+)>$/);
+  if (angleMatch) {
+    const name = String(angleMatch[1] || "").trim().replace(/^"|"$/g, "");
+    const email = String(angleMatch[2] || "").trim();
+
+    if (!email) {
+      throw new Error("EMAIL_FROM must contain a valid sender email address");
+    }
+
+    return name ? { email, name } : { email };
+  }
+
+  return { email: trimmedValue };
 }
 
-export async function verifySmtpConnection() {
-  return getSmtpTransporter().verify();
+function normalizeRecipient(to) {
+  if (typeof to === "string") {
+    const email = String(to || "").trim();
+    if (!email) {
+      throw new Error("Recipient email is required");
+    }
+
+    return { email };
+  }
+
+  if (to && typeof to === "object") {
+    const email = String(to.email || "").trim();
+    if (!email) {
+      throw new Error("Recipient email is required");
+    }
+
+    const name = String(to.name || "").trim();
+    return name ? { email, name } : { email };
+  }
+
+  throw new Error("Recipient email is required");
+}
+
+function getBrevoClient() {
+  if (brevoClient) {
+    return brevoClient;
+  }
+
+  assertBrevoConfiguration();
+
+  brevoClient = new BrevoClient({
+    apiKey: String(env.brevoApiKey || process.env.BREVO_API_KEY || "").trim(),
+  });
+
+  return brevoClient;
+}
+
+function getBrevoErrorDetails(error) {
+  const rawHeaders = error?.rawResponse?.headers;
+  const requestId =
+    error?.requestId ||
+    rawHeaders?.get?.("x-request-id") ||
+    rawHeaders?.get?.("X-Request-Id") ||
+    undefined;
+
+  return {
+    statusCode: error?.statusCode,
+    message: error?.message,
+    body: error?.body,
+    code: error?.code,
+    requestId,
+  };
+}
+
+function logBrevoError(context, error) {
+  console.error(context, getBrevoErrorDetails(error));
+
+  if (error?.stack) {
+    console.error(error.stack);
+  }
+}
+
+function createSendEmailError(error) {
+  const statusCode = error?.statusCode;
+  const message = statusCode
+    ? `Brevo email request failed with status ${statusCode}`
+    : error?.message || "Brevo email request failed";
+
+  const wrappedError = new Error(message);
+  wrappedError.name = "BrevoEmailError";
+  wrappedError.statusCode = statusCode;
+  wrappedError.code = error?.code;
+  wrappedError.body = error?.body;
+  wrappedError.requestId = error?.requestId;
+  wrappedError.cause = error;
+
+  return wrappedError;
 }
 
 export async function sendEmail({ to, subject, html, text }) {
-  const from = String(env.emailFrom || process.env.EMAIL_FROM || "").trim();
-  const mail = { from, to, subject, html, text };
-
-  if (!from) {
-    throw new Error("Missing required SMTP environment variable: EMAIL_FROM");
+  const trimmedSubject = String(subject || "").trim();
+  if (!trimmedSubject) {
+    throw new Error("Email subject is required");
   }
 
-  const smtpTransporter = getSmtpTransporter();
+  const sender = parseSenderFromEmailFrom(env.emailFrom || process.env.EMAIL_FROM);
+  const recipient = normalizeRecipient(to);
+  const payload = {
+    sender,
+    subject: trimmedSubject,
+    to: [recipient],
+  };
 
-  return Promise.race([
-    smtpTransporter.sendMail(mail),
-    new Promise((_, reject) =>
-      setTimeout(
-        () =>
-          reject(
-            new Error(
-              `Email delivery timed out after ${emailDeliveryTimeoutMs}ms`,
-            ),
-          ),
-        emailDeliveryTimeoutMs,
-      ),
-    ),
-  ]);
+  if (html) {
+    payload.htmlContent = html;
+  }
+
+  if (text) {
+    payload.textContent = text;
+  }
+
+  try {
+    return await getBrevoClient().transactionalEmails.sendTransacEmail(payload);
+  } catch (error) {
+    logBrevoError(`Failed to send email to ${recipient.email}:`, error);
+    throw createSendEmailError(error);
+  }
 }
+

@@ -1,7 +1,7 @@
 import { createHash, randomBytes } from "crypto";
 import { env } from "../config/env.js";
 import User from "../models/User.js";
-import { hasSmtpConfiguration, sendEmail } from "../utils/email.js";
+import { hasBrevoConfiguration, sendEmail } from "../utils/email.js";
 import { generateJwtToken } from "../utils/generateToken.js";
 
 const passwordResetWindowMs = env.passwordResetTokenTtlMinutes * 60 * 1000;
@@ -240,7 +240,7 @@ async function sendWelcomeEmail(user) {
 async function issueOtpChallenge(user, purpose) {
   const { rawCode, hashedCode, expiresAt } = createOtpCode();
   const sentAt = new Date();
-  const hasMailTransport = hasSmtpConfiguration();
+  const hasMailTransport = hasBrevoConfiguration();
 
   user.authOtpCodeHash = hashedCode;
   user.authOtpExpiresAt = expiresAt;
@@ -493,9 +493,9 @@ export const forgotPassword = async (req, res) => {
         `/reset-password?token=${encodeURIComponent(rawToken)}`,
       );
 
-      // If SMTP is not configured or we're in development, expose the reset URL
+      // If Brevo is not configured or we're in development, expose the reset URL
       // in the response to allow local testing without email delivery.
-      if (!hasSmtpConfiguration() || env.nodeEnv === "development") {
+      if (!hasBrevoConfiguration() || env.nodeEnv === "development") {
         return res.json({ message: genericMessage, resetUrl });
       }
 

@@ -96,10 +96,7 @@ export const env = {
     process.env.PASSWORD_RESET_TOKEN_TTL_MINUTES || 30,
   ),
 
-  smtpHost: process.env.SMTP_HOST,
-  smtpPort: Number(process.env.SMTP_PORT || 587),
-  smtpUser: process.env.SMTP_USER,
-  smtpPass: process.env.SMTP_PASS,
+  brevoApiKey: process.env.BREVO_API_KEY || "",
   emailFrom: process.env.EMAIL_FROM,
 
   razorpayKeyId: process.env.RAZORPAY_KEY_ID,

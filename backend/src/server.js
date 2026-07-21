@@ -25,9 +25,7 @@ import "./workers/emailWorker.js";
 import "./workers/reminderWorker.js";
 import "./workers/smsWorker.js";
 import "./workers/refundWorker.js";
-import { verifySmtpConnection } from "./utils/email.js";
 import dns from "node:dns";
-import net from "node:net";
 
 dns.setDefaultResultOrder("ipv4first");
 const __filename = fileURLToPath(import.meta.url);
@@ -36,57 +34,6 @@ const __dirname = path.dirname(__filename);
 const app = express();
 app.set("trust proxy", 1);
 const server = http.createServer(app);
-//-------------------------------------------
-app.get("/smtp-test", async (req, res) => {
-  try {
-    await verifySmtpConnection();
-
-    res.send("SMTP OK");
-  } catch (err) {
-    console.error("SMTP test failed:", err);
-    res.status(500).json({
-      message: err.message,
-      code: err.code,
-      command: err.command,
-    });
-  }
-});
-
-app.get("/tcp-test", async (req, res) => {
-  const testPort = Number(req.query.port || 587);
-
-  const socket = net.createConnection({
-    host: "smtp-relay.brevo.com",
-    port: testPort,
-    timeout: 5000,
-  });
-
-  socket.on("connect", () => {
-    socket.destroy();
-    res.json({
-      port: testPort,
-      status: "connected",
-    });
-  });
-
-  socket.on("timeout", () => {
-    socket.destroy();
-    res.status(500).json({
-      port: testPort,
-      status: "timeout",
-    });
-  });
-
-  socket.on("error", (err) => {
-    res.status(500).json({
-      port: testPort,
-      status: "error",
-      code: err.code,
-      error: err.message,
-    });
-  });
-});
-//-------------------------
 function normalizeClientIp(value = "") {
   const trimmedValue = String(value || "").trim();
   if (!trimmedValue) return "";
@@ -320,12 +267,6 @@ app.use((err, req, res, next) => {
 
 async function start() {
   await connectDB();
-  try {
-    await verifySmtpConnection();
-    console.log("SMTP connected successfully");
-  } catch (error) {
-    console.error("SMTP connection failed:", error);
-  }
   initSocket(server);
   startTicketHoldCleanupLoop();
   startEventReminderLoop();
