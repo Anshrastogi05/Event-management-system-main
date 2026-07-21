@@ -118,8 +118,8 @@ MONGO_URI=your_mongodb_connection_string
 JWT_SECRET=your_long_random_secret
 CLIENT_URL=http://localhost:5173
 REDIS_HOST=127.0.0.1
-REDIS_PORT=6380
-REDIS_URL=redis://127.0.0.1:6380/0
+REDIS_PORT=6379
+REDIS_URL=redis://127.0.0.1:6379/0
 ```
 
 ### Run locally

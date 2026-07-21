@@ -377,7 +377,7 @@ async function finalizeRegistration({ registration, event, user }) {
       await sendEmail({ to: user.email, ...emailContent });
     }
   } catch (emailErr) {
-    console.error(`Failed to send registration email to ${user?.email}: ${emailErr.message}`);
+    console.error(`Failed to send registration email to ${user?.email}:`, emailErr);
   }
 }
 
@@ -462,7 +462,7 @@ export const cancelRegistration = async (req, res) => {
         await sendEmail({ to: req.user.email, ...emailContent });
       }
     } catch (emailErr) {
-      console.error(`Failed to send registration cancellation email to ${req.user.email}: ${emailErr.message}`);
+      console.error(`Failed to send registration cancellation email to ${req.user.email}:`, emailErr);
     }
 
     res.json({

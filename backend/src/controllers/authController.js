@@ -1,7 +1,7 @@
 import { createHash, randomBytes } from "crypto";
 import { env } from "../config/env.js";
 import User from "../models/User.js";
-import { sendEmail } from "../utils/email.js";
+import { hasSmtpConfiguration, sendEmail } from "../utils/email.js";
 import { generateJwtToken } from "../utils/generateToken.js";
 
 const passwordResetWindowMs = env.passwordResetTokenTtlMinutes * 60 * 1000;
@@ -233,16 +233,14 @@ async function sendWelcomeEmail(user) {
   try {
     await sendEmail({ to: user.email, ...buildWelcomeEmail(user) });
   } catch (error) {
-    console.error(
-      `Failed to send welcome email to ${user.email}: ${error.message}`,
-    );
+    console.error(`Failed to send welcome email to ${user.email}:`, error);
   }
 }
 
 async function issueOtpChallenge(user, purpose) {
   const { rawCode, hashedCode, expiresAt } = createOtpCode();
   const sentAt = new Date();
-  const hasMailTransport = Boolean(env.smtpHost && env.emailFrom);
+  const hasMailTransport = hasSmtpConfiguration();
 
   user.authOtpCodeHash = hashedCode;
   user.authOtpExpiresAt = expiresAt;
@@ -260,9 +258,7 @@ async function issueOtpChallenge(user, purpose) {
     });
   } catch (error) {
     emailDeliveryFailed = true;
-    console.error(
-      `Failed to send ${purpose} OTP email to ${user.email}: ${error.message}`,
-    );
+    console.error(`Failed to send ${purpose} OTP email to ${user.email}:`, error);
   }
 
   const response = buildOtpChallengeResponse(
@@ -491,9 +487,7 @@ export const forgotPassword = async (req, res) => {
         ...buildPasswordResetEmail(user, rawToken),
       });
     } catch (error) {
-      console.error(
-        `Failed to send password reset email to ${user.email}: ${error.message}`,
-      );
+      console.error(`Failed to send password reset email to ${user.email}:`, error);
 
       const resetUrl = buildClientUrl(
         `/reset-password?token=${encodeURIComponent(rawToken)}`,
@@ -501,7 +495,7 @@ export const forgotPassword = async (req, res) => {
 
       // If SMTP is not configured or we're in development, expose the reset URL
       // in the response to allow local testing without email delivery.
-      if (!env.smtpHost || env.nodeEnv === "development") {
+      if (!hasSmtpConfiguration() || env.nodeEnv === "development") {
         return res.json({ message: genericMessage, resetUrl });
       }
 

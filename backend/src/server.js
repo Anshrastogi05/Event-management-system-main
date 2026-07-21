@@ -25,6 +25,7 @@ import "./workers/emailWorker.js";
 import "./workers/reminderWorker.js";
 import "./workers/smsWorker.js";
 import "./workers/refundWorker.js";
+import { verifySmtpConnection } from "./utils/email.js";
 import dns from "node:dns";
 
 dns.setDefaultResultOrder("ipv4first");
@@ -34,26 +35,13 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const server = http.createServer(app);
 //-------------------------------------------
-import nodemailer from "nodemailer";
-
 app.get("/smtp-test", async (req, res) => {
   try {
-    const transporter = nodemailer.createTransport({
-      host: "smtp.gmail.com",
-      port: 587,
-      secure: false,
-      auth: {
-        user: process.env.SMTP_USER,
-        pass: process.env.SMTP_PASS,
-      },
-      connectionTimeout: 10000,
-    });
-
-    await transporter.verify();
+    await verifySmtpConnection();
 
     res.send("SMTP OK");
   } catch (err) {
-    console.error(err);
+    console.error("SMTP test failed:", err);
     res.status(500).json({
       message: err.message,
       code: err.code,
@@ -296,6 +284,12 @@ app.use((err, req, res, next) => {
 
 async function start() {
   await connectDB();
+  try {
+    await verifySmtpConnection();
+    console.log("SMTP connected successfully");
+  } catch (error) {
+    console.error("SMTP connection failed:", error);
+  }
   initSocket(server);
   startTicketHoldCleanupLoop();
   startEventReminderLoop();

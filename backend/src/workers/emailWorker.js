@@ -13,5 +13,5 @@ emailQueue.process(async (job) => {
 });
 
 emailQueue.on('failed', (job, error) => {
-  console.error(`Email job ${job.id} failed:`, error.message);
+  console.error(`Email job ${job.id} failed:`, error);
 });

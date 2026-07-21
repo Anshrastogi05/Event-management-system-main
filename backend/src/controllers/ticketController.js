@@ -336,9 +336,7 @@ async function finalizeTicketBookingPayment({
       );
     }
   } catch (emailErr) {
-    console.error(
-      `Failed to send ticket email to ${bookingUser?.email}: ${emailErr.message}`,
-    );
+    console.error(`Failed to send ticket email to ${bookingUser?.email}:`, emailErr);
   }
 
   const showDate = new Date(hydratedShow.date);
@@ -720,7 +718,7 @@ export const cancelTicketBooking = async (req, res) => {
         );
       }
     } catch (emailErr) {
-      console.error(`Failed to send ticket cancellation email: ${emailErr.message}`);
+      console.error("Failed to send ticket cancellation email:", emailErr);
     }
 
     await broadcastTicketSeatState(booking.show);

@@ -53,7 +53,8 @@ export async function sendUpcomingEventReminders() {
       remindersSent += 1;
     } catch (error) {
       console.error(
-        `Failed to send reminder for event ${event?.title || event?._id} to ${user?.email}: ${error.message}`,
+        `Failed to send reminder for event ${event?.title || event?._id} to ${user?.email}:`,
+        error,
       );
     }
   }
@@ -71,7 +72,7 @@ export function startEventReminderLoop() {
         );
       }
     } catch (error) {
-      console.error(`[reminders] job failed: ${error.message}`);
+      console.error("[reminders] job failed:", error);
     }
   };
 

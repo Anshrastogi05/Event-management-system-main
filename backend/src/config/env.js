@@ -1,6 +1,6 @@
 import dotenv from "dotenv";
 
-dotenv.config();
+dotenv.config({ override: true });
 
 function normalizeUrl(value = "") {
   return value.trim().replace(/\/+$/, "");

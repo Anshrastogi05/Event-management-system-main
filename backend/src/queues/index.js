@@ -15,6 +15,10 @@ const defaultJobOptions = {
   },
 };
 
+let bullMqDisabled = false;
+let bullMqRetryAfter = 0;
+let bullMqUnavailableLogged = false;
+
 function createBullMqConnection() {
   const options = createBullMqRedisOptions();
   if (!options) {
@@ -23,6 +27,26 @@ function createBullMqConnection() {
 
   const { url, ...redisOptions } = options;
   return url ? new IORedis(url, redisOptions) : new IORedis(redisOptions);
+}
+
+async function canConnectToBullMq() {
+  const options = createBullMqRedisOptions();
+  if (!options) return false;
+
+  const { url, ...redisOptions } = options;
+  const probe = url ? new IORedis(url, redisOptions) : new IORedis(redisOptions);
+  const swallowError = () => {};
+
+  probe.on('error', swallowError);
+
+  try {
+    await probe.connect();
+    await probe.ping();
+    return true;
+  } finally {
+    probe.off('error', swallowError);
+    probe.disconnect();
+  }
 }
 
 function emitIfHandled(emitter, eventName, ...args) {
@@ -65,6 +89,16 @@ export class BullQueueFacade extends EventEmitter {
       return null;
     }
 
+    if (bullMqDisabled && Date.now() < bullMqRetryAfter) {
+      if (!bullMqUnavailableLogged) {
+        bullMqUnavailableLogged = true;
+        console.warn(
+          `BullMQ queue ${this.name} skipped: Redis is unavailable locally. Set REDIS_URL or start Redis to enable queues.`,
+        );
+      }
+      return null;
+    }
+
     try {
       const queue = this.ensureQueue();
       return await queue.add(this.name, data, {
@@ -72,7 +106,14 @@ export class BullQueueFacade extends EventEmitter {
         ...options,
       });
     } catch (error) {
-      console.error(`BullMQ queue ${this.name} enqueue failed:`, error.message);
+      bullMqDisabled = true;
+      bullMqRetryAfter = Date.now() + 30000;
+      if (!bullMqUnavailableLogged) {
+        bullMqUnavailableLogged = true;
+        console.warn(
+          `BullMQ queue ${this.name} unavailable: Redis is not reachable right now. Queue jobs will be skipped until Redis is available.`,
+        );
+      }
       return null;
     }
   }
@@ -86,30 +127,55 @@ export class BullQueueFacade extends EventEmitter {
       return this;
     }
 
-    try {
-      this.workerConnection = createBullMqConnection();
-      this.worker = new Worker(this.name, handler, {
-        connection: this.workerConnection,
-        concurrency: 1,
-      });
+    void (async () => {
+      if (bullMqDisabled && Date.now() < bullMqRetryAfter) {
+        if (!bullMqUnavailableLogged) {
+          bullMqUnavailableLogged = true;
+          console.warn(
+            `BullMQ worker ${this.name} skipped: Redis is unavailable locally. Set REDIS_URL or start Redis to enable queues.`,
+          );
+        }
+        this.workerStarted = false;
+        return;
+      }
 
-      this.worker.on('completed', (job, result) => {
-        this.emit('completed', job, result);
-      });
+      try {
+        await canConnectToBullMq();
+        bullMqDisabled = false;
+        bullMqUnavailableLogged = false;
 
-      this.worker.on('failed', (job, error) => {
-        this.emit('failed', job, error);
-      });
+        this.workerConnection = createBullMqConnection();
+        this.worker = new Worker(this.name, handler, {
+          connection: this.workerConnection,
+          concurrency: 1,
+        });
 
-      this.worker.on('error', (error) => {
-        console.error(`BullMQ worker ${this.name} error:`, error.message);
-        emitIfHandled(this, 'error', error);
-      });
+        this.worker.on('completed', (job, result) => {
+          this.emit('completed', job, result);
+        });
 
-      console.log(`BullMQ worker ready: ${this.name}`);
-    } catch (error) {
-      console.error(`BullMQ worker ${this.name} failed to start:`, error.message);
-    }
+        this.worker.on('failed', (job, error) => {
+          this.emit('failed', job, error);
+        });
+
+        this.worker.on('error', (error) => {
+          console.error(`BullMQ worker ${this.name} error:`, error);
+          emitIfHandled(this, 'error', error);
+        });
+
+        console.log(`BullMQ worker ready: ${this.name}`);
+      } catch (error) {
+        bullMqDisabled = true;
+        bullMqRetryAfter = Date.now() + 30000;
+        this.workerStarted = false;
+        if (!bullMqUnavailableLogged) {
+          bullMqUnavailableLogged = true;
+          console.warn(
+            `BullMQ worker ${this.name} unavailable: Redis is not reachable right now. Queue workers will stay disabled until Redis is available.`,
+          );
+        }
+      }
+    })();
 
     return this;
   }
