@@ -27,6 +27,7 @@ import "./workers/smsWorker.js";
 import "./workers/refundWorker.js";
 import { verifySmtpConnection } from "./utils/email.js";
 import dns from "node:dns";
+import net from "node:net";
 
 dns.setDefaultResultOrder("ipv4first");
 const __filename = fileURLToPath(import.meta.url);
@@ -51,6 +52,31 @@ app.get("/smtp-test", async (req, res) => {
   }
 });
 
+app.get("/tcp-test", async (req, res) => {
+  const socket = net.createConnection({
+    host: "smtp-relay.brevo.com",
+    port: 587,
+    timeout: 5000,
+  });
+
+  socket.on("connect", () => {
+    socket.destroy();
+    res.json({ status: "TCP connection successful" });
+  });
+
+  socket.on("timeout", () => {
+    socket.destroy();
+    res.status(500).json({ status: "TCP timeout" });
+  });
+
+  socket.on("error", (err) => {
+    res.status(500).json({
+      status: "TCP error",
+      error: err.message,
+      code: err.code,
+    });
+  });
+});
 //-------------------------
 function normalizeClientIp(value = "") {
   const trimmedValue = String(value || "").trim();
