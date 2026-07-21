@@ -52,8 +52,6 @@ app.get("/smtp-test", async (req, res) => {
   }
 });
 
-import net from "node:net";
-
 app.get("/tcp-test", async (req, res) => {
   const testPort = Number(req.query.port || 587);
 
