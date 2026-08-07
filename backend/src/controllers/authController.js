@@ -53,6 +53,14 @@ function buildAuthPayload(user) {
   };
 }
 
+function issueSession(user, message) {
+  return {
+    token: generateJwtToken({ id: user._id, role: user.role, name: user.name }),
+    user: buildAuthPayload(user),
+    message,
+  };
+}
+
 function clearAuthOtp(user) {
   user.authOtpCodeHash = undefined;
   user.authOtpExpiresAt = undefined;
@@ -298,8 +306,13 @@ export const signup = async (req, res) => {
       email,
       password,
       role,
-      isEmailVerified: false,
+      isEmailVerified: !env.authOtpEnabled,
     });
+
+    if (!env.authOtpEnabled) {
+      void sendWelcomeEmail(user);
+      return res.status(201).json(issueSession(user, "Account created successfully."));
+    }
 
     const otpPayload = await issueOtpChallenge(user, "signup");
 
@@ -330,6 +343,15 @@ export const login = async (req, res) => {
     const valid = await user.comparePassword(password);
     if (!valid) return res.status(400).json({ message: "Invalid credentials" });
 
+    if (!env.authOtpEnabled) {
+      if (!user.isEmailVerified) {
+        user.isEmailVerified = true;
+        clearAuthOtp(user);
+        await user.save({ validateBeforeSave: false });
+      }
+      return res.json(issueSession(user, "Login successful."));
+    }
+
     const purpose = user.isEmailVerified ? "login" : "signup";
     const otpPayload = await issueOtpChallenge(user, purpose);
 
@@ -344,6 +366,102 @@ export const login = async (req, res) => {
     });
   } catch (err) {
     return res.status(500).json({ message: err.message });
+  }
+};
+
+export const startGoogleAuth = async (req, res) => {
+  if (!env.googleClientId || !env.googleClientSecret) {
+    return res.status(503).json({ message: "Google sign-in is not configured." });
+  }
+
+  const params = new URLSearchParams({
+    client_id: env.googleClientId,
+    redirect_uri: env.googleRedirectUri,
+    response_type: "code",
+    scope: "openid email profile",
+    access_type: "offline",
+    prompt: "select_account",
+  });
+  const requestedRole = ["customer", "organizer"].includes(req.query?.role)
+    ? req.query.role
+    : "customer";
+  const state = `${requestedRole}:${randomBytes(16).toString("hex")}`;
+  res.cookie("google_oauth_state", state, {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: env.nodeEnv === "production",
+    maxAge: 10 * 60 * 1000,
+  });
+  params.set("state", state);
+  return res.redirect(`https://accounts.google.com/o/oauth2/v2/auth?${params}`);
+};
+
+export const googleAuthCallback = async (req, res) => {
+  const failureUrl = `${env.clientUrl}/login?oauthError=`;
+  try {
+    const code = req.query?.code;
+    if (!code) return res.redirect(`${failureUrl}${encodeURIComponent("Google sign-in was cancelled.")}`);
+    const state = req.query?.state;
+    if (!state || state !== req.cookies?.google_oauth_state) {
+      return res.redirect(`${failureUrl}${encodeURIComponent("Google sign-in session expired. Please try again.")}`);
+    }
+    res.clearCookie("google_oauth_state");
+
+    const tokenResponse = await fetch("https://oauth2.googleapis.com/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        code,
+        client_id: env.googleClientId,
+        client_secret: env.googleClientSecret,
+        redirect_uri: env.googleRedirectUri,
+        grant_type: "authorization_code",
+      }),
+    });
+    const tokenData = await tokenResponse.json();
+    if (!tokenResponse.ok || !tokenData.access_token) throw new Error("Google token exchange failed.");
+
+    const profileResponse = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
+      headers: { Authorization: `Bearer ${tokenData.access_token}` },
+    });
+    const profile = await profileResponse.json();
+    if (!profileResponse.ok || !profile.sub || !profile.email || profile.email_verified === false) {
+      throw new Error("Google did not return a verified email address.");
+    }
+
+    const email = profile.email.trim().toLowerCase();
+    const requestedRole = String(state).split(":", 1)[0];
+    const role = ["customer", "organizer"].includes(requestedRole)
+      ? requestedRole
+      : "customer";
+    let user = await User.findOne({ $or: [{ googleId: profile.sub }, { email }] });
+    if (user?.isBlocked) return res.redirect(`${failureUrl}${encodeURIComponent("User is blocked.")}`);
+
+    if (!user) {
+      user = await User.create({
+        name: profile.name || profile.email.split("@")[0],
+        email,
+        // OAuth users do not use this password; keep the existing schema contract.
+        password: randomBytes(32).toString("hex"),
+        googleId: profile.sub,
+        authProvider: "google",
+        role,
+        isEmailVerified: true,
+        avatarUrl: profile.picture,
+      });
+    } else {
+      user.googleId = profile.sub;
+      user.authProvider = "google";
+      user.isEmailVerified = true;
+      if (profile.picture && !user.avatarUrl) user.avatarUrl = profile.picture;
+      await user.save({ validateBeforeSave: false });
+    }
+
+    const session = issueSession(user, "Google sign-in successful.");
+    return res.redirect(`${env.clientUrl}/oauth/callback?token=${encodeURIComponent(session.token)}`);
+  } catch (error) {
+    console.error("Google OAuth error:", error);
+    return res.redirect(`${failureUrl}${encodeURIComponent("Unable to sign in with Google right now.")}`);
   }
 };
 

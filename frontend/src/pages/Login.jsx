@@ -11,6 +11,7 @@ export default function Login() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const infoMessage = location.state?.message || '';
+  const oauthError = new URLSearchParams(location.search).get('oauthError') || '';
 
   async function submit(e) {
     e.preventDefault();
@@ -45,14 +46,19 @@ export default function Login() {
     <div className="max-w-md mx-auto space-y-4">
       <h1 className="font-bold text-xl mb-4">Login</h1>
       {infoMessage && <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/40 dark:text-emerald-200">{infoMessage}</div>}
+      {oauthError && <div className="text-red-600 text-sm mb-2">{oauthError}</div>}
       {error && <div className="text-red-600 text-sm mb-2">{error}</div>}
       <form onSubmit={submit} className="space-y-3">
         <input className="input w-full" placeholder="Email" value={email} onChange={(e)=>setEmail(e.target.value)} />
         <input className="input w-full" type="password" placeholder="Password" value={password} onChange={(e)=>setPassword(e.target.value)} />
         <button className="btn w-full">Login</button>
       </form>
+      <div className="flex items-center gap-3 text-xs text-slate-400"><span className="h-px flex-1 bg-slate-200 dark:bg-slate-700" />OR<span className="h-px flex-1 bg-slate-200 dark:bg-slate-700" /></div>
+      <button className="btn-outline w-full" type="button" onClick={() => { window.location.href = '/api/auth/google'; }}>
+        Continue with Google
+      </button>
       <div className="text-sm text-slate-600 dark:text-slate-300">
-        Forgot your password? <Link to="/forgot-password" className="underline">Reset it here</Link>
+        Forgot your password? <Link to="/reset-password" className="underline">Reset it here</Link>
       </div>
       <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-3 text-sm">
         <div className="font-semibold mb-1">Demo credentials</div>

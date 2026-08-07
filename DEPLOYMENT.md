@@ -15,7 +15,11 @@ This project is split into two deployable apps:
    - Start: `npm start`
 5. Add the environment variables from `backend/.env.example`.
 6. Make sure `CLIENT_URL` and `CLIENT_URLS` contain your Vercel domain.
-7. Deploy the service and copy the Render URL.
+7. Configure Google OAuth in Google Cloud Console with the backend callback URL
+   `https://your-backend.onrender.com/api/auth/google/callback`, then set
+   `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and `GOOGLE_REDIRECT_URI` on Render.
+   Keep `AUTH_OTP_ENABLED=false` while OTP is temporarily bypassed.
+8. Deploy the service and copy the Render URL.
 
 ## 2. Deploy the frontend on Vercel
 

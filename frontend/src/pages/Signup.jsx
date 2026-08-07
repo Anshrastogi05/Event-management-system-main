@@ -12,6 +12,10 @@ export default function Signup() {
   const [role, setRole] = useState('customer');
   const [error, setError] = useState('');
 
+  function continueWithGoogle() {
+    window.location.href = `/api/auth/google?role=${encodeURIComponent(role)}`;
+  }
+
   async function submit(e) {
     e.preventDefault();
     setError('');
@@ -58,6 +62,10 @@ export default function Signup() {
         </select>
         <button className="btn w-full">Sign up</button>
       </form>
+      <div className="flex items-center gap-3 text-xs text-slate-400"><span className="h-px flex-1 bg-slate-200 dark:bg-slate-700" />OR<span className="h-px flex-1 bg-slate-200 dark:bg-slate-700" /></div>
+      <button className="btn-outline w-full" type="button" onClick={continueWithGoogle}>
+        Sign up with Google
+      </button>
       <div className="text-sm text-slate-600 mt-2">Have an account? <Link to="/login" className="underline">Login</Link></div>
     </div>
   );

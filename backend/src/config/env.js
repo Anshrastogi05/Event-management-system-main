@@ -88,6 +88,14 @@ export const env = {
   authOtpResendCooldownSeconds: Number(
     process.env.AUTH_OTP_RESEND_COOLDOWN_SECONDS || 60,
   ),
+  // OTP remains implemented and can be re-enabled with AUTH_OTP_ENABLED=true.
+  authOtpEnabled: process.env.AUTH_OTP_ENABLED === "true",
+
+  googleClientId: process.env.GOOGLE_CLIENT_ID || "",
+  googleClientSecret: process.env.GOOGLE_CLIENT_SECRET || "",
+  googleRedirectUri:
+    process.env.GOOGLE_REDIRECT_URI ||
+    `${process.env.API_URL || `http://localhost:${process.env.PORT || 5050}`}/api/auth/google/callback`,
 
   clientUrl: primaryClientUrl,
   clientUrls: allowedClientUrls,

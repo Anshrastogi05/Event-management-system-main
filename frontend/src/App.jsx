@@ -24,6 +24,7 @@ import Signup from "./pages/Signup.jsx";
 import TicketShowDetails from "./pages/TicketShowDetails.jsx";
 import Profile from "./pages/Profile.jsx";
 import VerifyOtp from "./pages/VerifyOtp.jsx";
+import OAuthCallback from "./pages/OAuthCallback.jsx";
 import AdminDashboard from "./pages/dashboard/AdminDashboard.jsx";
 import CustomerDashboard from "./pages/dashboard/CustomerDashboard.jsx";
 import OrganizerDashboard from "./pages/dashboard/OrganizerDashboard.jsx";
@@ -240,6 +241,7 @@ export default function App() {
               <Route path="/login" element={<Login />} />
               <Route path="/forgot-password" element={<ForgotPassword />} />
               <Route path="/reset-password" element={<ResetPassword />} />
+              <Route path="/oauth/callback" element={<OAuthCallback />} />
               <Route path="/verify-otp" element={<VerifyOtp />} />
               <Route path="/signup" element={<Signup />} />
               <Route
