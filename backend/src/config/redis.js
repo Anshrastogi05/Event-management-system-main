@@ -6,6 +6,7 @@ let redisClientPromise = null;
 let redisDisabled = false;
 let redisErrorLogged = false;
 let redisRetryAfter = 0;
+const shouldLogRedisWarnings = env.nodeEnv === 'production';
 
 const hasExplicitRedisConfig = Boolean(
   process.env.REDIS_URL ||
@@ -104,7 +105,9 @@ export async function getRedisClient() {
         client.on('error', (error) => {
           if (redisErrorLogged) return;
           redisErrorLogged = true;
-          console.error('Redis error:', error.message);
+          if (shouldLogRedisWarnings) {
+            console.error('Redis error:', error.message);
+          }
         });
 
         await client.connect();
@@ -112,7 +115,9 @@ export async function getRedisClient() {
         redisErrorLogged = false;
         return client;
       } catch (error) {
-        console.warn(`Redis unavailable: ${error.message}`);
+        if (shouldLogRedisWarnings) {
+          console.warn(`Redis unavailable: ${error.message}`);
+        }
         redisDisabled = true;
         redisRetryAfter = Date.now() + 30000;
         if (client) {
