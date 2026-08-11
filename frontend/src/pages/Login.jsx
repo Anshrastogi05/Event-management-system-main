@@ -2,6 +2,7 @@ import { useState } from 'react';
 import axios from 'axios';
 import { useNavigate, Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
+import { API_BASE_URL } from '../config/network.js';
 
 export default function Login() {
   const { login } = useAuth();
@@ -54,7 +55,7 @@ export default function Login() {
         <button className="btn w-full">Login</button>
       </form>
       <div className="flex items-center gap-3 text-xs text-slate-400"><span className="h-px flex-1 bg-slate-200 dark:bg-slate-700" />OR<span className="h-px flex-1 bg-slate-200 dark:bg-slate-700" /></div>
-      <button className="btn-outline w-full" type="button" onClick={() => { window.location.href = '/api/auth/google'; }}>
+      <button className="btn-outline w-full" type="button" onClick={() => { window.location.href = `${API_BASE_URL}/api/auth/google`; }}>
         Continue with Google
       </button>
       <div className="text-sm text-slate-600 dark:text-slate-300">

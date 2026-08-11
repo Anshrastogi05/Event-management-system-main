@@ -2,6 +2,7 @@ import { useState } from 'react';
 import axios from 'axios';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
+import { API_BASE_URL } from '../config/network.js';
 
 export default function Signup() {
   const { login } = useAuth();
@@ -13,7 +14,7 @@ export default function Signup() {
   const [error, setError] = useState('');
 
   function continueWithGoogle() {
-    window.location.href = `/api/auth/google?role=${encodeURIComponent(role)}`;
+    window.location.href = `${API_BASE_URL}/api/auth/google?role=${encodeURIComponent(role)}`;
   }
 
   async function submit(e) {
